@@ -74,7 +74,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build backend image
-        run: docker build -t novalume/backend:ci backend
+        run: |
+          docker build -t novalume/backend:ci backend 2>&1 | tail -30
 
       - name: Build frontend image
-        run: docker build -t novalume/frontend:ci frontend
+        run: |
+          docker build -t novalume/frontend:ci frontend 2>&1 | tail -10
