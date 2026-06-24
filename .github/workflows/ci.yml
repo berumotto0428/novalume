@@ -26,8 +26,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Set test env
+        run: |
+          echo "LLM_API_KEY=test" >> .env.ci
+          echo "LLM_BASE_URL=https://api.deepseek.com/v1" >> .env.ci
+          echo "LLM_MODEL=deepseek-chat" >> .env.ci
+          echo "EMBEDDING_API_KEY=test" >> .env.ci
+          echo "EMBEDDING_BASE_URL=https://open.bigmodel.cn/api/paas/v4" >> .env.ci
+          echo "EMBEDDING_MODEL=embedding-3" >> .env.ci
+          echo "JWT_SECRET_KEY=test" >> .env.ci
+          echo "CORS_ORIGINS=[\"http://localhost:5173\"]" >> .env.ci
+
       - name: Check imports
-        run: python -c "import config; import database; import main; print('Backend OK')"
+        run: |
+          mv .env.ci .env
+          python -c "import config; import database; import main; print('Backend OK')"
 
   frontend:
     runs-on: ubuntu-latest
