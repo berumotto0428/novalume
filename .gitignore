@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+
+# IDE & Tools
+.claude/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project storage (user uploads, vector db, SQLite)
+backend/storage/
+*.db
+
+# Docs
+docs/superpowers/
+docs/audit/
