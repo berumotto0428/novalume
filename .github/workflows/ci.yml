@@ -74,19 +74,26 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Check if code changed
         id: check
         run: |
-          # 首次 push 或 tag push → 总是构建
-          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+          # tag push → 总是构建
+          if [ "${{ github.ref_type }}" = "tag" ]; then
             echo "build=true" >> $GITHUB_OUTPUT
           else
-            changed=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- backend/ frontend/ 2>/dev/null)
-            if [ -n "$changed" ]; then
-              echo "build=true" >> $GITHUB_OUTPUT
+            # 首次 push 或代码改动了 → 构建
+            if git rev-parse HEAD~1 >/dev/null 2>&1; then
+              changed=$(git diff --name-only HEAD~1 HEAD -- backend/ frontend/)
+              if [ -n "$changed" ]; then
+                echo "build=true" >> $GITHUB_OUTPUT
+              else
+                echo "build=false" >> $GITHUB_OUTPUT
+              fi
             else
-              echo "build=false" >> $GITHUB_OUTPUT
+              echo "build=true" >> $GITHUB_OUTPUT
             fi
           fi
 
