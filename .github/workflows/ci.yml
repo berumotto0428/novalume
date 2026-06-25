@@ -75,13 +75,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check if code changed
+        id: check
+        run: |
+          # 首次 push 或 tag push → 总是构建
+          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            echo "build=true" >> $GITHUB_OUTPUT
+          else
+            changed=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- backend/ frontend/ 2>/dev/null)
+            if [ -n "$changed" ]; then
+              echo "build=true" >> $GITHUB_OUTPUT
+            else
+              echo "build=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
       - name: Login to DockerHub
+        if: steps.check.outputs.build == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker images
+        if: steps.check.outputs.build == 'true'
         run: |
           # 构建
           docker build -t berumotto0428/novalume:backend-latest backend
