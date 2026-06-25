@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -80,22 +81,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push backend
-        uses: docker/build-push-action@v5
-        with:
-          context: backend
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/novalume:backend-latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/novalume:backend-v1.0.0
-            ${{ secrets.DOCKERHUB_USERNAME }}/novalume:backend-${{ github.sha }}
-
-      - name: Build and push frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: frontend
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/novalume:frontend-latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/novalume:frontend-v1.0.0
-            ${{ secrets.DOCKERHUB_USERNAME }}/novalume:frontend-${{ github.sha }}
+      - name: Build and push Docker images
+        run: |
+          # 构建
+          docker build -t berumotto0428/novalume:backend-latest backend
+          docker build -t berumotto0428/novalume:frontend-latest frontend
+          # 推送 latest
+          docker push berumotto0428/novalume:backend-latest
+          docker push berumotto0428/novalume:frontend-latest
+          # 如果是 git tag 推送，额外推版本标签
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            docker tag berumotto0428/novalume:backend-latest berumotto0428/novalume:backend-${{ github.ref_name }}
+            docker tag berumotto0428/novalume:frontend-latest berumotto0428/novalume:frontend-${{ github.ref_name }}
+            docker push berumotto0428/novalume:backend-${{ github.ref_name }}
+            docker push berumotto0428/novalume:frontend-${{ github.ref_name }}
+          fi
