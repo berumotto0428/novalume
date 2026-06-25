@@ -87,6 +87,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/novalume:backend-latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/novalume:backend-v1.0.0
             ${{ secrets.DOCKERHUB_USERNAME }}/novalume:backend-${{ github.sha }}
 
       - name: Build and push frontend
@@ -96,4 +97,5 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/novalume:frontend-latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/novalume:frontend-v1.0.0
             ${{ secrets.DOCKERHUB_USERNAME }}/novalume:frontend-${{ github.sha }}
