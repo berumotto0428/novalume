@@ -11,7 +11,7 @@ import { useAuthStore } from '@/store/authStore'
 import { docApi } from '@/api/documents'
 import type { Document as DocType } from '@/types'
 
-pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
 
 const RENDER_BUFFER = 8
 

@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog'
 import { useAuthStore } from '@/store/authStore'
 import type { SourceItem } from '@/types'
 
-pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
 
 const RENDER_BUFFER = 5
 const PAGE_GAP = 8  // 页间距，紧凑排列
