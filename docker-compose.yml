@@ -1,16 +1,16 @@
 services:
   backend:
-    build: ./backend
+    image: berumotto0428/novalume:backend-latest
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/storage:/app/storage
+      - ./storage:/app/storage
     env_file:
       - .env
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    image: berumotto0428/novalume:frontend-latest
     ports:
       - "80:80"
     depends_on:
