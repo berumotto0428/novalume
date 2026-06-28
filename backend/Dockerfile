@@ -5,6 +5,9 @@ WORKDIR /app
 # Install system deps for pymupdf
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 libglib2.0-0 \
+    libreoffice \
+    fonts-wqy-zenhei \
+    fonts-wqy-microhei \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
