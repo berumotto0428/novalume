@@ -1,5 +1,7 @@
 import os
 import asyncio
+import subprocess
+import threading
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -19,7 +21,27 @@ from services.auth_service import decode_token
 
 router = APIRouter()
 
-ALLOWED_EXTENSIONS = {".pdf"}
+ALLOWED_EXTENSIONS = {
+    ".pdf", ".docx", ".doc",
+    ".md", ".txt",
+    ".xlsx", ".xls",
+    ".pptx",
+    ".jpg", ".jpeg", ".png",
+}
+
+MIME_TYPES = {
+    ".pdf":  "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc":  "application/msword",
+    ".md":   "text/markdown",
+    ".txt":  "text/plain",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls":  "application/vnd.ms-excel",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png":  "image/png",
+}
 
 
 def verify_kb_access(kb_id: str, current_user: User, db: Session) -> KnowledgeBase:
@@ -61,16 +83,19 @@ async def upload_documents(
     for file in files:
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(status_code=400, detail=f"文件 {file.filename} 不是 PDF 格式")
+            raise HTTPException(
+                status_code=400,
+                detail=f"文件 {file.filename} 格式不支持，仅支持 PDF / Word / Excel / PPT / Markdown / 图片",
+            )
         content = await file.read()
         if len(content) > settings.max_upload_size_mb * 1024 * 1024:
             raise HTTPException(
                 status_code=400,
                 detail=f"文件 {file.filename} 超出大小限制（{settings.max_upload_size_mb}MB）",
             )
-        validated.append((file.filename, content))
+        validated.append((file.filename, content, ext))
 
-    for filename, content in validated:
+    for filename, content, ext in validated:
         doc = Document(
             knowledge_base_id=kb_id,
             user_id=current_user.id,
@@ -83,19 +108,13 @@ async def upload_documents(
         db.add(doc)
         db.flush()
 
-        # 保存文件：{kb_id}/{doc_id}.pdf（UUID 命名，避免中文文件名问题）
-        doc_path = os.path.join(kb_dir, f"{doc.id}.pdf")
+        # 保存文件：{kb_id}/{doc_id}{原始扩展名}（UUID 命名，避免中文文件名问题）
+        doc_path = os.path.join(kb_dir, f"{doc.id}{ext}")
         with open(doc_path, "wb") as f:
             f.write(content)
-        doc.file_path = os.path.join(kb_id, f"{doc.id}.pdf")
+        doc.file_path = os.path.join(kb_id, f"{doc.id}{ext}")
 
-        results.append(DocumentResponse(
-            id=doc.id, knowledge_base_id=doc.knowledge_base_id,
-            filename=doc.filename, file_size=doc.file_size,
-            page_count=doc.page_count, status=doc.status,
-            chunk_count=doc.chunk_count, error_message=doc.error_message,
-            created_at=doc.created_at,
-        ))
+        results.append(DocumentResponse.model_validate(doc))
 
         # 触发后台处理（BackgroundTasks + run_in_executor，不阻塞事件循环）
         background_tasks.add_task(_run_process, doc.id)
@@ -112,16 +131,7 @@ def list_documents(
 ):
     verify_kb_access(kb_id, current_user, db)
     docs = db.query(Document).filter(Document.knowledge_base_id == kb_id).all()
-    return [
-        DocumentResponse(
-            id=d.id, knowledge_base_id=d.knowledge_base_id,
-            filename=d.filename, file_size=d.file_size,
-            page_count=d.page_count, status=d.status,
-            chunk_count=d.chunk_count, error_message=d.error_message,
-            created_at=d.created_at,
-        )
-        for d in docs
-    ]
+    return [DocumentResponse.model_validate(d) for d in docs]
 
 
 @router.get("/knowledge-bases/{kb_id}/documents/{doc_id}", response_model=DocumentResponse)
@@ -134,13 +144,7 @@ def get_document(
     doc = db.get(Document, doc_id)
     if not doc or doc.knowledge_base_id != kb_id:
         raise HTTPException(status_code=404, detail="文档不存在")
-    return DocumentResponse(
-        id=doc.id, knowledge_base_id=doc.knowledge_base_id,
-        filename=doc.filename, file_size=doc.file_size,
-        page_count=doc.page_count, status=doc.status,
-        chunk_count=doc.chunk_count, error_message=doc.error_message,
-        created_at=doc.created_at,
-    )
+    return DocumentResponse.model_validate(doc)
 
 
 @router.put("/knowledge-bases/{kb_id}/documents/{doc_id}", response_model=DocumentResponse)
@@ -188,13 +192,7 @@ def rename_document(
             except (json_lib.JSONDecodeError, TypeError):
                 continue
         db.commit()
-    return DocumentResponse(
-        id=doc.id, knowledge_base_id=doc.knowledge_base_id,
-        filename=doc.filename, file_size=doc.file_size,
-        page_count=doc.page_count, status=doc.status,
-        chunk_count=doc.chunk_count, error_message=doc.error_message,
-        created_at=doc.created_at,
-    )
+    return DocumentResponse.model_validate(doc)
 
 
 @router.get("/knowledge-bases/{kb_id}/documents/{doc_id}/file")
@@ -231,7 +229,120 @@ def get_document_file(
     file_path = os.path.join(settings.file_storage_dir, doc.file_path)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="文件不存在")
-    return FileResponse(file_path, media_type="application/pdf")
+    ext = os.path.splitext(doc.file_path)[1].lower()
+    mime = MIME_TYPES.get(ext, "application/octet-stream")
+    return FileResponse(file_path, media_type=mime)
+
+
+_preview_lock = threading.Lock()
+
+
+@router.get("/knowledge-bases/{kb_id}/documents/{doc_id}/preview")
+def get_document_preview(
+    kb_id: str, doc_id: str,
+    request: Request,
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Word/PPT → LibreOffice 转 PDF，缓存后返回。
+
+    认证：同时支持 Bearer header 和 query param token（与 /file 一致）。
+    并发：threading.Lock + 双重检查。LibreOffice 不支持并行转换，第一个
+    请求转换期间后续请求排队等待。大文件（几十MB PPT）耗时 10-30 秒。
+    FastAPI 自动将 sync def 放线程池执行，不阻塞主事件循环。
+    Lock 导致等待请求在线程池中排队，单用户场景可接受。
+    """
+    # 认证（双模式：query param token + Bearer header）
+    raw_token = token
+    if not raw_token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            raw_token = auth[7:]
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        user_id = decode_token(raw_token)
+        user = db.get(User, user_id)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token 无效")
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在")
+
+    # 权限校验：确认知识库属于当前用户
+    verify_kb_access(kb_id, user, db)
+
+    doc = db.get(Document, doc_id)
+    if not doc or doc.knowledge_base_id != kb_id:
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    # 格式校验：只服务 Word/PPT，其他格式不调用 LibreOffice
+    PREVIEW_SUPPORTED_TYPES = {"word", "pptx"}
+    if doc.file_type not in PREVIEW_SUPPORTED_TYPES:
+        raise HTTPException(status_code=400, detail="该格式不支持预览转换")
+
+    preview_path = os.path.join(settings.file_storage_dir, kb_id, f"{doc_id}_preview.pdf")
+
+    # 缓存命中 → 直接返回
+    if os.path.exists(preview_path):
+        return FileResponse(preview_path, media_type="application/pdf")
+
+    # 缓存未命中 → 加锁转换（LibreOffice 不能并行）
+    with _preview_lock:
+        # 双重检查（等锁期间可能已被其他请求转好）
+        if os.path.exists(preview_path):
+            return FileResponse(preview_path, media_type="application/pdf")
+
+        original_path = os.path.join(settings.file_storage_dir, doc.file_path)
+        output_dir = os.path.dirname(preview_path)
+
+        result = subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "pdf",
+             "--outdir", output_dir, original_path],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            raise HTTPException(500, f"文档转换失败: {result.stderr[:200]}")
+
+        # LibreOffice 输出文件名 = 磁盘文件名（doc_id）+.pdf，重命名为带 _preview 后缀
+        stored_stem = os.path.splitext(os.path.basename(doc.file_path))[0]
+        actual_output = os.path.join(output_dir, f"{stored_stem}.pdf")
+        expected_output = os.path.join(output_dir, f"{doc_id}_preview.pdf")
+        if os.path.exists(actual_output) and actual_output != expected_output:
+            os.rename(actual_output, expected_output)
+
+        return FileResponse(preview_path, media_type="application/pdf")
+
+
+@router.get("/knowledge-bases/{kb_id}/documents/{doc_id}/text")
+def get_document_text(
+    kb_id: str, doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """返回文档的提取文本（用于 Markdown 预览）"""
+    verify_kb_access(kb_id, current_user, db)
+    doc = db.get(Document, doc_id)
+    if not doc or doc.knowledge_base_id != kb_id:
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    try:
+        collection = vector_service.get_or_create_collection(kb_id)
+        result = collection.get(
+            where={"document_id": doc_id},
+            include=["documents", "metadatas"],
+        )
+        if not result or not result.get("documents"):
+            return {"text": ""}
+
+        # 按 chunk_index 排序后拼接
+        pairs = sorted(
+            zip(result["documents"], result["metadatas"]),
+            key=lambda x: x[1].get("chunk_index", 0),
+        )
+        text = "\n\n---\n\n".join(doc for doc, _ in pairs)
+        return {"text": text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取文档内容失败: {e}")
 
 
 @router.delete("/knowledge-bases/{kb_id}/documents/{doc_id}")
@@ -249,6 +360,11 @@ def delete_document(
     doc_path = os.path.join(settings.file_storage_dir, doc.file_path)
     if os.path.exists(doc_path):
         os.remove(doc_path)
+
+    # 1b. 删除预览缓存（Word/PPT 的 LibreOffice 转换结果）
+    preview_path = os.path.join(settings.file_storage_dir, kb_id, f"{doc.id}_preview.pdf")
+    if os.path.exists(preview_path):
+        os.remove(preview_path)
 
     # 2. 删除向量库 chunks
     vector_service.delete_document_chunks(doc.knowledge_base_id, doc.id)
