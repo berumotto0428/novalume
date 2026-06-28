@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
 import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import PdfViewerDialog from './PdfViewerDialog'
+import ImageViewerDialog from '@/components/document/ImageViewerDialog'
+import OfficeViewerDialog from '@/components/document/OfficeViewerDialog'
+import TextViewerDialog from '@/components/document/TextViewerDialog'
 import type { SourceItem } from '@/types'
 
 interface Props {
@@ -17,6 +20,24 @@ export default function SourcePanel({ sources, kbId }: Props) {
   const handleViewSource = (s: SourceItem) => {
     setViewSource(s)
     setDialogKey((k) => k + 1)
+  }
+
+  const renderViewer = () => {
+    if (!viewSource) return null
+    const ft = viewSource.file_type || 'pdf'
+    const props = {
+      key: dialogKey,
+      source: viewSource,
+      kbId,
+      open: !!viewSource,
+      onOpenChange: (o: boolean) => { if (!o) setViewSource(null) },
+    } as const
+
+    if (ft === 'image')    return <ImageViewerDialog {...props} />
+    if (ft === 'excel')    return <OfficeViewerDialog {...props} />
+    if (ft === 'markdown') return <TextViewerDialog {...props} />
+    // pdf / word / pptx → PdfViewerDialog（word/pptx 内部用 /preview 接口）
+    return <PdfViewerDialog {...props} />
   }
 
   if (!sources || sources.length === 0) return null
@@ -57,13 +78,7 @@ export default function SourcePanel({ sources, kbId }: Props) {
         </CollapsibleContent>
       </Collapsible>
 
-      <PdfViewerDialog
-        key={dialogKey}
-        source={viewSource}
-        kbId={kbId}
-        open={!!viewSource}
-        onOpenChange={(open) => { if (!open) setViewSource(null) }}
-      />
+      {renderViewer()}
     </>
   )
 }

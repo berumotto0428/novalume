@@ -15,6 +15,77 @@ pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
 
 const RENDER_BUFFER = 8
 
+function ImageFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
+  const navigate = useNavigate()
+  const [imgUrl, setImgUrl] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const token = useAuthStore.getState().token
+    fetch(`/api/knowledge-bases/${kbId}/documents/${doc.id}/file`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob() })
+      .then((blob) => setImgUrl(URL.createObjectURL(blob)))
+      .catch((e) => setError(e.message))
+  }, [doc.id, kbId])
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
+        <Button variant="ghost" size="icon" onClick={() => navigate(`/kb/${kbId}/docs`)}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-sm font-medium ml-2">{doc.filename}</span>
+      </div>
+      <div className="flex-1 flex items-center justify-center bg-gray-100 p-4">
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        {imgUrl && <img src={imgUrl} alt={doc.filename} className="max-w-full max-h-full object-contain" />}
+      </div>
+    </div>
+  )
+}
+
+function MarkdownFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
+  const navigate = useNavigate()
+  const [text, setText] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const token = useAuthStore.getState().token
+    fetch(`/api/knowledge-bases/${kbId}/documents/${doc.id}/text`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then((data) => { setText(data.text || ''); setLoading(false) })
+      .catch((e) => { setError(e.message); setLoading(false) })
+  }, [doc.id, kbId])
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
+        <Button variant="ghost" size="icon" onClick={() => navigate(`/kb/${kbId}/docs`)}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-sm font-medium ml-2">{doc.filename}</span>
+      </div>
+      <div className="flex-1 overflow-auto p-6 bg-white">
+        {loading && <Skeleton className="h-64 w-full" />}
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        {text && (
+          <article className="prose prose-sm max-w-none">
+            {/* Simple markdown rendering: split by double newlines for paragraphs */}
+            {text.split('\n\n').map((p, i) => (
+              <p key={i} className="mb-2">{p}</p>
+            ))}
+          </article>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function PdfViewerPage() {
   const { kbId, docId } = useParams<{ kbId: string; docId: string }>()
   const navigate = useNavigate()
@@ -34,19 +105,38 @@ export default function PdfViewerPage() {
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const scrollTicking = useRef(false)
   const pdfDocRef = useRef<any>(null)
-  const numPagesRef = useRef(0)  // ref 版本，避免 react-pdf 内部闭包捕获旧值
+  const numPagesRef = useRef(0)
   useEffect(() => { numPagesRef.current = numPages }, [numPages])
 
   useEffect(() => {
     if (!kbId || !docId) return
-    docApi.get(kbId, docId).then((res) => setDoc(res.data)).catch(() => {})
-    const token = useAuthStore.getState().token
-    fetch(`/api/knowledge-bases/${kbId}/documents/${docId}/file`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.arrayBuffer() })
-      .then((buf) => { if (buf.byteLength === 0) throw new Error('空文件'); setPdfData(buf); setLoading(false) })
-      .catch((err) => { setError(err.message); setLoading(false) })
+
+    // 先获取文档信息，根据 file_type 选择加载方式
+    docApi.get(kbId, docId).then((res) => {
+      const docData = res.data
+      setDoc(docData)
+      const ft = docData.file_type
+      const token = useAuthStore.getState().token
+
+      if (ft === 'image' || ft === 'markdown') {
+        // 图片和 Markdown 由子组件自行加载，这里完成 loading 即可
+        setLoading(false)
+        return
+      }
+
+      // pdf / word / pptx：通过 /file 或 /preview 获取 PDF
+      const isPreview = ft === 'word' || ft === 'pptx'
+      const url = isPreview
+        ? `/api/knowledge-bases/${kbId}/documents/${docId}/preview`
+        : `/api/knowledge-bases/${kbId}/documents/${docId}/file`
+
+      fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer() })
+        .then((buf) => { if (buf.byteLength === 0) throw new Error('空文件'); setPdfData(buf); setLoading(false) })
+        .catch((err) => { setError(err.message); setLoading(false) })
+    }).catch(() => setLoading(false))
   }, [kbId, docId])
 
   useEffect(() => {
@@ -88,8 +178,6 @@ export default function PdfViewerPage() {
     if (n >= 1 && n <= numPagesRef.current) scrollToPage(n)
   }
 
-  // react-pdf 内部链接点击 → onItemClick 直接给目标页码
-  // 用 ref 取值，避免被 react-pdf 内部 useRef 闭包捕获旧 numPages
   const handleItemClick = useCallback((args: { pageNumber: number }) => {
     const targetPage = args.pageNumber
     const n = numPagesRef.current
@@ -98,6 +186,14 @@ export default function PdfViewerPage() {
       requestAnimationFrame(() => scrollToPage(targetPage))
     }
   }, [scrollToPage])
+
+  // 非 PDF 格式：渲染专用页面
+  if (doc && doc.file_type === 'image' && !loading) {
+    return <ImageFullPage doc={doc} kbId={kbId!} />
+  }
+  if (doc && doc.file_type === 'markdown' && !loading) {
+    return <MarkdownFullPage doc={doc} kbId={kbId!} />
+  }
 
   if (loading) return (
     <div className="h-full flex flex-col">
@@ -108,7 +204,7 @@ export default function PdfViewerPage() {
 
   if (error) return (
     <div className="h-full flex flex-col items-center justify-center text-gray-400">
-      <p>PDF 加载失败: {error}</p>
+      <p>加载失败: {error}</p>
       <Button variant="link" onClick={() => navigate(`/kb/${kbId}/docs`)}>返回文档管理</Button>
     </div>
   )
@@ -159,10 +255,8 @@ export default function PdfViewerPage() {
       </div>
 
       <div className="flex-1 flex overflow-hidden bg-gray-100">
-        {/* 目录侧边栏 */}
         {showOutline && pdfDocRef.current && (
           <>
-            {/* 点击 PDF 区域收起目录 */}
             <div className="flex-1 absolute inset-0 z-0" onClick={() => setShowOutline(false)} />
             <div className="w-64 border-r bg-white overflow-y-auto shrink-0 p-4 text-sm relative z-10">
               <p className="text-xs text-gray-400 mb-3 font-medium tracking-wide" style={{ letterSpacing: '0.05em' }}>目 录</p>
@@ -178,8 +272,7 @@ export default function PdfViewerPage() {
               .pdf-outline ul ul a { padding-left: 20px; font-size: 12px; color: #7c8cf7; }
               .pdf-outline ul ul ul a { padding-left: 32px; font-size: 11px; color: #a5b0fc; }
             `}</style>
-            <Outline pdf={pdfDocRef.current} onItemClick={handleItemClick}
-                className="pdf-outline" />
+              <Outline pdf={pdfDocRef.current} onItemClick={handleItemClick} className="pdf-outline" />
             </div>
           </>
         )}

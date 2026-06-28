@@ -41,7 +41,10 @@ export default function PdfViewerDialog({ source, kbId, open, onOpenChange }: Pr
     inited.current = false
 
     const token = useAuthStore.getState().token
-    const url = `/api/knowledge-bases/${kbId}/documents/${source.document_id}/file`
+    const isOfficePreview = source.file_type === 'word' || source.file_type === 'pptx'
+    const url = isOfficePreview
+      ? `/api/knowledge-bases/${kbId}/documents/${source.document_id}/preview`
+      : `/api/knowledge-bases/${kbId}/documents/${source.document_id}/file`
 
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => {
