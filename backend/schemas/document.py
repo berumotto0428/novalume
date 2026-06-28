@@ -14,6 +14,7 @@ class DocumentResponse(BaseModel):
     filename: str
     file_size: int
     page_count: Optional[int]
+    file_type: Optional[str] = None  # ← 新增
     status: str
     chunk_count: int
     error_message: Optional[str]

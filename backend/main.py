@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
             ("add_is_active", "ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1"),
             ("add_last_login_at", "ALTER TABLE users ADD COLUMN last_login_at DATETIME"),
             ("add_avatar_path", "ALTER TABLE users ADD COLUMN avatar_path VARCHAR"),
+            ("add_file_type", "ALTER TABLE documents ADD COLUMN file_type VARCHAR(20)"),
         ]
         for name, sql in pending:
             if name not in applied:

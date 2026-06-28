@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     fetch_count: int = 30              # 从向量库取多少个候选（阈值过滤后会进一步缩减）
     max_chunks: int = 15               # 最终返回的最大片段数（按相关度动态取，不超过此值）
 
+    # ── 视觉模型（通义千问 Qwen-VL-Flash）──
+    vision_api_key: str = ""
+    vision_base_url: str = "https://ws-uocymb09zdfbgxsc.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    vision_model: str = "qwen-vl-flash"
+
     # ── CORS（跨域） ──
     cors_origins: list[str] = ["http://localhost:5173"]
 
