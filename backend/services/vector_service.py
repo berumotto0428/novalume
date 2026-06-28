@@ -136,6 +136,7 @@ class VectorService:
                 "text": doc,
                 "filename": meta.get("filename", ""),
                 "document_id": meta.get("document_id", ""),
+                "file_type": meta.get("file_type", "pdf"),
                 "chunk_index": meta.get("chunk_index", 0),
                 "page_number": meta.get("page_number", 0),
                 "distance": dist,

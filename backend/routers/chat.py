@@ -79,6 +79,7 @@ async def chat(
                 "document_id": r.get("document_id", ""),
                 "chunk_index": r["chunk_index"],
                 "page_number": r.get("page_number", 0),
+                "file_type": r.get("file_type", "pdf"),
                 "distance": r["distance"],
                 "score": r.get("score", 0),
                 "text_preview": r["text"][:150],
