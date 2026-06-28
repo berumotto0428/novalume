@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Layers, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronRight, FileText, MessageSquare, File as FileIcon } from 'lucide-react'
+import { Layers, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronRight, FileText, MessageSquare } from 'lucide-react'
+import DocIcon from '@/components/document/DocIcon'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
@@ -104,7 +105,7 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
                         location.pathname === `/kb/${kb.id}/docs/${doc.id}` ? 'bg-brand-50 text-brand-600' : 'text-gray-500 hover:text-brand-600 hover:bg-brand-50/40'
                       }`}
                     >
-                      <FileIcon className="h-3 w-3 shrink-0" />
+                      <DocIcon fileType={doc.file_type} />
                       <span className="truncate">{doc.filename}</span>
                       {doc.status === 'ready' && <span className="text-green-500 shrink-0">✓</span>}
                     </button>

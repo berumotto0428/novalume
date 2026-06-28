@@ -22,6 +22,7 @@ export interface Document {
   filename: string
   file_size: number
   page_count: number | null
+  file_type: string | null
   status: 'pending' | 'processing' | 'ready' | 'failed'
   chunk_count: number
   error_message: string | null
@@ -42,6 +43,7 @@ export interface SourceItem {
   document_id?: string
   chunk_index: number
   page_number?: number
+  file_type?: string
   distance?: number
   score?: number
   text_preview: string
