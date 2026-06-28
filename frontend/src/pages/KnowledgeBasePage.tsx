@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Upload, FileText, Trash2, Pencil, HardDrive, BookOpen } from 'lucide-react'
+import DocIcon from '@/components/document/DocIcon'
 import { useDropzone } from 'react-dropzone'
 import { kbApi } from '@/api/knowledgeBases'
 import { docApi } from '@/api/documents'
@@ -81,7 +82,23 @@ export default function KnowledgeBasePage() {
     finally { setUploading(false) }
   }, [kbId])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept: { 'application/pdf': ['.pdf'] }, multiple: true, disabled: uploading })
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/msword': ['.doc'],
+      'text/markdown': ['.md'],
+      'text/plain': ['.txt'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls'],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+    },
+    multiple: true,
+    disabled: uploading,
+  })
 
   // Rename
   const handleRename = async (docId: string) => {
@@ -131,7 +148,10 @@ export default function KnowledgeBasePage() {
       onDrop={(e) => {
         e.preventDefault()
         setIsPageDrag(false)
-        const files = Array.from(e.dataTransfer.files).filter((f) => f.name.endsWith('.pdf'))
+        const ALLOWED_EXTS = ['.pdf', '.docx', '.doc', '.md', '.txt', '.xlsx', '.xls', '.pptx', '.jpg', '.jpeg', '.png']
+        const files = Array.from(e.dataTransfer.files).filter(f =>
+          ALLOWED_EXTS.some(ext => f.name.toLowerCase().endsWith(ext))
+        )
         if (files.length > 0) onDrop(files)
       }}
     >
@@ -168,8 +188,8 @@ export default function KnowledgeBasePage() {
           <div className="absolute inset-0 z-20 rounded-xl border-2 border-dashed border-brand-400 bg-brand-500/5 backdrop-blur-sm flex items-center justify-center">
             <div className="bg-white/95 rounded-xl px-8 py-6 shadow-lg border text-center">
               <Upload className="h-10 w-10 text-brand-500 mx-auto mb-3" />
-              <p className="text-brand-600 font-medium text-lg">放开以上传 PDF</p>
-              <p className="text-xs text-gray-400 mt-1">支持多文件同时上传</p>
+              <p className="text-brand-600 font-medium text-lg">放开以上传文档</p>
+              <p className="text-xs text-gray-400 mt-1">支持 PDF · Word · Excel · PPT · Markdown · 图片</p>
             </div>
           </div>
         )}
@@ -177,7 +197,7 @@ export default function KnowledgeBasePage() {
         <div className="text-center py-16 bg-white/80 backdrop-blur-sm border-2 border-dashed border-brand-200 rounded-xl min-h-[70vh] flex flex-col items-center justify-center">
           <BookOpen className="h-14 w-14 mx-auto mb-3 text-brand-300 opacity-40" />
           <p className="text-sm font-medium text-brand-600">知识库还没有文档</p>
-          <p className="text-xs mt-1 text-brand-400">拖拽 PDF 到页面或点击右上角「上传文件」</p>
+          <p className="text-xs mt-1 text-brand-400">拖拽文件到页面或点击右上角「上传文件」</p>
         </div>
       ) : (
         <div className="border border-brand-100 rounded-xl shadow-card overflow-hidden">
@@ -206,8 +226,9 @@ export default function KnowledgeBasePage() {
                         </div>
                       ) : (
                         <button onClick={() => navigate(`/kb/${kbId}/docs/${doc.id}`)}
-                          className="text-brand-600 hover:text-brand-700 font-medium underline underline-offset-2 decoration-brand-300/50 hover:decoration-brand-500 truncate max-w-[300px] block text-left">
-                          {doc.filename}
+                          className="text-brand-600 hover:text-brand-700 font-medium underline underline-offset-2 decoration-brand-300/50 hover:decoration-brand-500 truncate max-w-[300px] block text-left flex items-center gap-1.5">
+                          <DocIcon fileType={doc.file_type} />
+                          <span className="truncate">{doc.filename}</span>
                         </button>
                       )}
                     </td>
