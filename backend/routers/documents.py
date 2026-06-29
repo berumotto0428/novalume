@@ -295,8 +295,15 @@ def get_document_preview(
         original_path = os.path.join(settings.file_storage_dir, doc.file_path)
         output_dir = os.path.dirname(preview_path)
 
+        # Windows 和 Linux 下 LibreOffice 路径不同
+        LIBRE_PATH = "libreoffice"
+        if os.name == "nt":
+            candidate = r"C:\Program Files\LibreOffice\program\soffice.exe"
+            if os.path.exists(candidate):
+                LIBRE_PATH = candidate
+
         result = subprocess.run(
-            ["libreoffice", "--headless", "--convert-to", "pdf",
+            [LIBRE_PATH, "--headless", "--convert-to", "pdf",
              "--outdir", output_dir, original_path],
             capture_output=True, text=True, timeout=120,
         )
