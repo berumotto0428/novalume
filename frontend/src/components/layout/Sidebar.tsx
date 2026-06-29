@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Plus, LogOut, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,9 @@ export default function Sidebar() {
     return 260
   })
   const isResizing = useRef(false)
+  const navRef = useRef<HTMLElement>(null)
+  const scrollPosRef = useRef(0)
+  const scrollRestored = useRef(false)
 
   const navigate = useNavigate()
   const location = useLocation()
@@ -61,6 +64,32 @@ export default function Sidebar() {
   useEffect(() => {
     localStorage.setItem(EXPANDED_KEY, JSON.stringify([...expandedIds]))
   }, [expandedIds])
+
+  // 展开/收起后恢复滚动位置
+  useLayoutEffect(() => {
+    if (navRef.current && scrollPosRef.current > 0) {
+      navRef.current.scrollTop = scrollPosRef.current
+      scrollPosRef.current = 0
+    }
+  })
+
+  // 恢复侧边栏滚动位置（刷新页面后保持）
+  useEffect(() => {
+    if (navRef.current && !scrollRestored.current) {
+      const saved = sessionStorage.getItem("novalume_sidebar_scroll")
+      if (saved) {
+        navRef.current.scrollTop = parseInt(saved)
+      }
+      scrollRestored.current = true
+    }
+    const saveScroll = () => {
+      if (navRef.current) {
+        sessionStorage.setItem("novalume_sidebar_scroll", String(navRef.current.scrollTop))
+      }
+    }
+    window.addEventListener("beforeunload", saveScroll)
+    return () => window.removeEventListener("beforeunload", saveScroll)
+  }, [])
 
   // 持久化宽度
   useEffect(() => {
@@ -96,6 +125,8 @@ export default function Sidebar() {
   }
 
   const handleToggle = (kbId: string) => {
+    // 保存展开/收起前的滚动位置
+    if (navRef.current) scrollPosRef.current = navRef.current.scrollTop
     setExpandedIds(prev => {
       const next = new Set(prev)
       if (next.has(kbId)) next.delete(kbId)
@@ -136,7 +167,7 @@ export default function Sidebar() {
         </div>
 
         {/* KB Tree */}
-        <nav className="flex-1 overflow-y-auto px-2">
+        <nav ref={navRef} className="flex-1 overflow-y-auto px-2">
           {kbs.map((kb) => (
             <KBItem
               key={kb.id}
