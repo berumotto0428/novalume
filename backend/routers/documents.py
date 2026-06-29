@@ -297,16 +297,21 @@ def get_document_preview(
 
         # Windows 和 Linux 下 LibreOffice 路径不同
         LIBRE_PATH = "libreoffice"
+        LO_ENV = os.environ.copy()
         if os.name == "nt":
             candidate = r"C:\Program Files\LibreOffice\program\soffice.exe"
             if os.path.exists(candidate):
                 LIBRE_PATH = candidate
+            # Windows 上 LibreOffice 后台进程会持有锁，导致后续调用挂起。
+            # 用独立的 HOME 目录隔离锁文件，避免死锁。
+            LO_ENV["HOME"] = os.path.join(settings.file_storage_dir, ".lo_home")
+            os.makedirs(LO_ENV["HOME"], exist_ok=True)
 
         try:
             result = subprocess.run(
-                [LIBRE_PATH, "--headless", "--convert-to", "pdf",
+                [LIBRE_PATH, "--headless", "--norestore", "--convert-to", "pdf",
                  "--outdir", output_dir, original_path],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, timeout=120, env=LO_ENV,
             )
         except FileNotFoundError:
             raise HTTPException(500, f"文档转换失败: 找不到 LibreOffice，请检查路径 {LIBRE_PATH}")
