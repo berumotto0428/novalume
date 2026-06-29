@@ -90,7 +90,7 @@ class VectorService:
         """
         import time
         collection = self.get_or_create_collection(kb_id)
-        batch_size = 50
+        batch_size = 10
         for i in range(0, len(chunks), batch_size):
             for attempt in range(3):
                 try:
@@ -102,7 +102,7 @@ class VectorService:
                     break
                 except Exception as e:
                     if attempt < 2:
-                        time.sleep(2 ** attempt)
+                        time.sleep(3 * (attempt + 1))
                     else:
                         raise e
 
