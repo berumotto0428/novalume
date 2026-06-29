@@ -61,66 +61,24 @@ class VectorService:
     def add_chunks(self, kb_id: str, chunks: list[str], metadatas: list[dict], ids: list[str]) -> None:
         """批量添加文本片段到向量库。"""
         import time
-        import logging
-        logger = logging.getLogger(__name__)
-
-        # 先算 embedding，再直接写入，避免 ChromaDB collection.add 的内部超时问题
-        from openai import OpenAI
-        client = OpenAI(api_key=settings.embedding_api_key, base_url=settings.embedding_base_url)
-
         collection = self.get_or_create_collection(kb_id)
         batch_size = 50
-
         for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i + batch_size]
-            batch_meta = metadatas[i:i + batch_size]
-            batch_ids = ids[i:i + batch_size]
-
             if i > 0:
                 time.sleep(3)
-
-            ok = False
             for attempt in range(3):
                 try:
-                    resp = client.embeddings.create(
-                        model=settings.embedding_model,
-                        input=batch,
-                        timeout=60,
-                    )
-                    embeddings = [d.embedding for d in resp.data]
                     collection.add(
-                        embeddings=embeddings,
-                        documents=batch,
-                        metadatas=batch_meta,
-                        ids=batch_ids,
+                        documents=chunks[i:i + batch_size],
+                        metadatas=metadatas[i:i + batch_size],
+                        ids=ids[i:i + batch_size],
                     )
-                    ok = True
                     break
                 except Exception as e:
-                    msg = str(e).replace('\n', ' ')[:150]
-                    logger.warning(f"add_chunks batch {i//batch_size+1} attempt {attempt+1}: {msg}")
                     if attempt < 2:
                         time.sleep(5 * (attempt + 1))
-
-            if not ok:
-                # 记录失败的具体批次内容
-                logger.error(f"add_chunks batch {i//batch_size+1} FAILED. First chunk: {batch[0][:80]}")
-                try:
-                    # 逐条写入失败的批次（跳过有问题的单条）
-                    for j, (doc, meta, eid) in enumerate(zip(batch, batch_meta, batch_ids)):
-                        for attempt in range(2):
-                            try:
-                                resp = client.embeddings.create(
-                                    model=settings.embedding_model, input=[doc], timeout=30
-                                )
-                                emb = [d.embedding for d in resp.data]
-                                collection.add(embeddings=emb, documents=[doc], metadatas=[meta], ids=[eid])
-                                break
-                            except Exception:
-                                if attempt == 0:
-                                    time.sleep(3)
-                except Exception as fallback_e:
-                    raise Exception(f"fallback also failed: {fallback_e}")
+                    else:
+                        raise
 
     def query(self, kb_id: str, query_text: str) -> list[dict]:
         """
