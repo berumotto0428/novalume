@@ -170,52 +170,7 @@ export default function PdfViewerPage() {
     </div>
   )
 
-  // ── 非 PDF 内容：图片 / Markdown / Excel ──
-  if (doc && doc.file_type === 'image') return (
-    <div className="h-full flex flex-col">
-      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <button onClick={goToDocs} className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0">
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="text-sm font-medium ml-2">{doc.filename}</span>
-      </div>
-      <div className="flex-1 flex items-center justify-center bg-gray-100 p-4">
-        {imgUrl && <img src={imgUrl} alt={doc.filename} className="max-w-full max-h-full object-contain" />}
-      </div>
-    </div>
-  )
 
-  if (doc && doc.file_type === 'markdown') return (
-    <div className="h-full flex flex-col">
-      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <button onClick={goToDocs} className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0">
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="text-sm font-medium ml-2">{doc.filename}</span>
-      </div>
-      <div className="flex-1 overflow-auto p-6 bg-white">
-        {markdownText && (
-          <article className="prose prose-sm max-w-none">
-            <ReactMarkdown>{markdownText}</ReactMarkdown>
-          </article>
-        )}
-      </div>
-    </div>
-  )
-
-  if (doc && doc.file_type === 'excel') return (
-    <div className="h-full flex flex-col">
-      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <button onClick={goToDocs} className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0">
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="text-sm font-medium ml-2">{doc.filename}</span>
-      </div>
-      <div className="flex-1 overflow-auto p-6 bg-white">
-        {excelHtml && <div dangerouslySetInnerHTML={{ __html: excelHtml }} />}
-      </div>
-    </div>
-  )
 
   // ── PDF / Word / PPT 内容 ──
   const pageHeightPx = Math.round(pageWidth * 1.414)
@@ -263,6 +218,23 @@ export default function PdfViewerPage() {
         </div>
       </div>
 
+      {(doc?.file_type === 'image') ? (
+        <div className="flex-1 flex items-center justify-center bg-gray-100 p-4">
+          {imgUrl && <img src={imgUrl} alt={doc.filename} className="max-w-full max-h-full object-contain" />}
+        </div>
+      ) : (doc?.file_type === 'markdown') ? (
+        <div className="flex-1 overflow-auto p-6 bg-white">
+          {markdownText && (
+            <article className="prose prose-sm max-w-none">
+              <ReactMarkdown>{markdownText}</ReactMarkdown>
+            </article>
+          )}
+        </div>
+      ) : (doc?.file_type === 'excel') ? (
+        <div className="flex-1 overflow-auto p-6 bg-white">
+          {excelHtml && <div dangerouslySetInnerHTML={{ __html: excelHtml }} />}
+        </div>
+      ) : (
       <div className="flex-1 flex overflow-hidden bg-gray-100">
         {showOutline && pdfDocRef.current && (
           <>
@@ -291,6 +263,7 @@ export default function PdfViewerPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
