@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { useAuthStore } from '@/store/authStore'
 import { useEffect, useState } from 'react'
@@ -8,6 +8,12 @@ import RegisterPage from '@/pages/RegisterPage'
 import KnowledgeBasePage from '@/pages/KnowledgeBasePage'
 import ChatPage from '@/pages/ChatPage'
 import PdfViewerPage from '@/pages/PdfViewerPage'
+
+// 用 docId 作为 key，切换文档时强制重建组件（避免白屏）
+function PdfViewerPageWithKey() {
+  const { docId } = useParams()
+  return <PdfViewerPage key={docId} />
+}
 import SettingsPage from '@/pages/SettingsPage'
 import AdminDashboardPage from '@/pages/admin/AdminDashboardPage'
 import AdminUsersPage from '@/pages/admin/AdminUsersPage'
@@ -78,7 +84,7 @@ export default function App() {
             </div>
           } />
           <Route path="kb/:kbId/docs" element={<KnowledgeBasePage />} />
-          <Route path="kb/:kbId/docs/:docId" element={<PdfViewerPage />} />
+          <Route path="kb/:kbId/docs/:docId" element={<PdfViewerPageWithKey />} />
           <Route path="kb/:kbId/chat" element={<ChatPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
