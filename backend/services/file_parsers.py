@@ -46,6 +46,7 @@ def _describe_image(img_bytes: bytes, img_ext: str = "png") -> str:
         b64 = base64.b64encode(img_bytes).decode()
         resp = client.chat.completions.create(
             model=settings.vision_model,
+            timeout=30,
             messages=[{
                 "role": "user",
                 "content": [
