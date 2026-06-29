@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Layers, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronRight, FileText, MessageSquare } from 'lucide-react'
+import { Layers, MoreHorizontal, Pencil, Trash2, ChevronDown, ChevronRight, FileText, MessageSquare, Loader2 } from 'lucide-react'
 import DocIcon from '@/components/document/DocIcon'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
@@ -31,7 +31,7 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
   const [loadingDocs, setLoadingDocs] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { setCurrentKb, kbVersion } = useKBStore()
+  const { setCurrentKb, kbVersion, streamingKbId, unreadKbIds } = useKBStore()
 
   const isActive = location.pathname.startsWith(`/kb/${kb.id}`)
 

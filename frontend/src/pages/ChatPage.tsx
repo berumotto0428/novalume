@@ -16,7 +16,7 @@ import type { KnowledgeBase, ChatMessage, SourceItem, Message } from '@/types'
 export default function ChatPage() {
   const { kbId } = useParams<{ kbId: string }>()
   const navigate = useNavigate()
-  const { setCurrentKb, kbVersion, bumpVersion } = useKBStore()
+  const { setCurrentKb, kbVersion, bumpVersion, setStreaming, markRead } = useKBStore()
   const [kb, setKb] = useState<KnowledgeBase | null>(null)
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -60,6 +60,8 @@ export default function ChatPage() {
         isStreaming: false,
       }))
       setMessages(history)
+      // 进入对话页时清除未读标记
+      if (kbId) markRead(kbId)
     }).catch(() => toast.error('加载消息失败'))
   }, [kbId, kbVersion])
 
@@ -82,6 +84,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMsg, assistantMsg])
     setIsStreaming(true)
     setInputText('')
+    setStreaming(kbId)
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -110,12 +113,15 @@ export default function ChatPage() {
               return updated
             })
             setIsStreaming(false)
-            // 通知其他页面（包括切回来后的自己）消息已更新
+            setStreaming(null)
             bumpVersion()
+            // 如果用户不在对话页面，标记未读
+            if (kbId) useKBStore.getState().markUnread(kbId)
           },
           onError: (msg) => {
             toast.error(msg)
             setIsStreaming(false)
+            setStreaming(null)
           },
         },
         controller.signal
