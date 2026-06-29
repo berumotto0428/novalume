@@ -1,44 +1,22 @@
 """
-向量数据库服务（ChromaDB + 混合搜索）。
+向量数据库服务，封装 ChromaDB 的增删查操作。
 
-核心 RAG 检索管道：
-  用户查询 → ① ChromaDB(cosine) 粗取 candidate → ② 阈值过滤 →
-  ③ jieba 分词 → 关键词评分 → ④ RRF 融合排序 → top N
-
-每次上传文档时，文本块被向量化后存入 ChromaDB；
-每次提问时，问题被向量化后在 ChromaDB 中搜索最相似的片段。
-
-【混合搜索 RRF】
-  Dense（余弦距离）+ Sparse（jieba 关键词命中率）→ RRF 融合
-  RRF = 1/(60 + dense_rank) + 1/(60 + sparse_rank)
-  解决纯语义搜索对专有名词（人名、地名）匹配弱的问题。
+使用 ChromaDB PersistentClient，数据持久化在本地磁盘。
 """
 import os
 import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="jieba")
+
 import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 from config import settings
 
 
 class VectorService:
-    """
-    ChromaDB 向量数据库的封装（延迟初始化）。
-
-    每个知识库对应一个 ChromaDB Collection（命名规范：kb_{uuid}）。
-    ChromaDB client 首次使用时才创建（__init__ 只校验路径）。
-    """
+    """向量数据库服务单例，统一管理 ChromaDB 集合操作。"""
 
     def __init__(self):
-        self._client = None
-        self._chroma_path = settings.chroma_persist_dir
+        self.client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
         self._embedding_fn = None
-
-    @property
-    def client(self):
-        if self._client is None:
-            self._client = chromadb.PersistentClient(path=self._chroma_path)
-        return self._client
 
     @property
     def embedding_fn(self):
@@ -52,57 +30,97 @@ class VectorService:
 
     @staticmethod
     def cleanup_pending():
-        """服务启动前调用：清理之前删除集合时遗留的 segment 目录"""
-        import shutil
-        base = settings.chroma_persist_dir
-        pending_file = os.path.join(base, "_pending_cleanup.txt")
+        """清理上次终止时残留的 ChromaDB 段目录。"""
+        pending_file = os.path.join(settings.chroma_persist_dir, "_pending_cleanup.txt")
         if not os.path.exists(pending_file):
             return
-        try:
-            with open(pending_file) as f:
-                uuids = [line.strip() for line in f if line.strip()]
-            for uid in uuids:
-                seg_dir = os.path.join(base, uid)
-                if os.path.isdir(seg_dir):
-                    shutil.rmtree(seg_dir, ignore_errors=True)
-            os.remove(pending_file)
-        except Exception:
-            pass
+        with open(pending_file) as f:
+            for line in f:
+                seg = line.strip()
+                if seg:
+                    path = os.path.join(settings.chroma_persist_dir, seg)
+                    if os.path.isdir(path):
+                        import shutil
+                        shutil.rmtree(path, ignore_errors=True)
+        os.remove(pending_file)
 
     def _collection_name(self, kb_id: str) -> str:
-        """将 UUID 格式的知识库 ID 转为 ChromaDB 兼容的集合名"""
-        return "kb_" + kb_id.replace("-", "_")
+        return f"kb_{kb_id.replace('-', '_')}"
 
     def get_or_create_collection(self, kb_id: str):
-        """获取或创建知识库对应的向量集合。创建时指定余弦距离作为度量。"""
-        return self.client.get_or_create_collection(
-            name=self._collection_name(kb_id),
-            embedding_function=self.embedding_fn,
-            metadata={"hnsw:space": "cosine"},
-        )
+        name = self._collection_name(kb_id)
+        try:
+            return self.client.get_collection(name)
+        except Exception:
+            return self.client.create_collection(
+                name=name,
+                embedding_function=self.embedding_fn,
+                metadata={"hnsw:space": "cosine"},
+            )
 
     def add_chunks(self, kb_id: str, chunks: list[str], metadatas: list[dict], ids: list[str]) -> None:
-        """批量添加文本片段到向量库（与改动前逻辑一致，加了重试）。"""
+        """批量添加文本片段到向量库。"""
         import time
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 先算 embedding，再直接写入，避免 ChromaDB collection.add 的内部超时问题
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.embedding_api_key, base_url=settings.embedding_base_url)
+
         collection = self.get_or_create_collection(kb_id)
         batch_size = 50
+
         for i in range(0, len(chunks), batch_size):
-            # 批次间间隔 3s，避免触发 API 限频
+            batch = chunks[i:i + batch_size]
+            batch_meta = metadatas[i:i + batch_size]
+            batch_ids = ids[i:i + batch_size]
+
             if i > 0:
                 time.sleep(3)
+
+            ok = False
             for attempt in range(3):
                 try:
-                    collection.add(
-                        documents=chunks[i:i + batch_size],
-                        metadatas=metadatas[i:i + batch_size],
-                        ids=ids[i:i + batch_size],
+                    resp = client.embeddings.create(
+                        model=settings.embedding_model,
+                        input=batch,
+                        timeout=60,
                     )
+                    embeddings = [d.embedding for d in resp.data]
+                    collection.add(
+                        embeddings=embeddings,
+                        documents=batch,
+                        metadatas=batch_meta,
+                        ids=batch_ids,
+                    )
+                    ok = True
                     break
                 except Exception as e:
+                    msg = str(e).replace('\n', ' ')[:150]
+                    logger.warning(f"add_chunks batch {i//batch_size+1} attempt {attempt+1}: {msg}")
                     if attempt < 2:
                         time.sleep(5 * (attempt + 1))
-                    else:
-                        raise e
+
+            if not ok:
+                # 记录失败的具体批次内容
+                logger.error(f"add_chunks batch {i//batch_size+1} FAILED. First chunk: {batch[0][:80]}")
+                try:
+                    # 逐条写入失败的批次（跳过有问题的单条）
+                    for j, (doc, meta, eid) in enumerate(zip(batch, batch_meta, batch_ids)):
+                        for attempt in range(2):
+                            try:
+                                resp = client.embeddings.create(
+                                    model=settings.embedding_model, input=[doc], timeout=30
+                                )
+                                emb = [d.embedding for d in resp.data]
+                                collection.add(embeddings=emb, documents=[doc], metadatas=[meta], ids=[eid])
+                                break
+                            except Exception:
+                                if attempt == 0:
+                                    time.sleep(3)
+                except Exception as fallback_e:
+                    raise Exception(f"fallback also failed: {fallback_e}")
 
     def query(self, kb_id: str, query_text: str) -> list[dict]:
         """
@@ -113,11 +131,12 @@ class VectorService:
         2. 过滤掉 distance > top_k_max_distance 的
         3. jieba 分词 → 关键词命中率评分
         4. RRF 融合：语义排名 + 关键词排名
-        5. 取融合后 Top N 返回
         """
+        import jieba
+        import re
+        from collections import Counter
+
         collection = self.get_or_create_collection(kb_id)
-        if collection.count() == 0:
-            return []
 
         # Step 1: 从 ChromaDB 取候选（给后续过滤留足空间）
         fetch_count = min(settings.fetch_count, collection.count())
@@ -156,25 +175,30 @@ class VectorService:
 
         # Step 3a: Dense rank（按余弦距离升序排列）
         candidates.sort(key=lambda x: x["distance"])
-        for i, c in enumerate(candidates):
-            c["_dense_rank"] = i + 1
+        for rank, c in enumerate(candidates, start=1):
+            c["_dense_rank"] = rank
 
-        # Step 3b: Sparse rank（jieba 分词 → 关键词命中率）
-        import jieba
-        words = jieba.lcut(query_text)
-        keywords = [w for w in words if len(w) > 1]
-
-        if keywords:
+        # Step 3b: 关键词评分（Sparse rank）
+        query_words = [
+            w for w in jieba.lcut(query_text)
+            if len(w) > 1 and not re.match(r'^\d+$', w)
+        ]
+        if query_words:
+            query_set = set(query_words)
             for c in candidates:
-                hits = sum(1 for kw in keywords if kw in c["text"])
-                c["_keyword_score"] = hits / len(keywords)
+                doc_words = set(
+                    w for w in jieba.lcut(c["text"])
+                    if len(w) > 1 and not re.match(r'^\d+$', w)
+                )
+                hits = len(query_set & doc_words)
+                c["_sparse_score"] = hits / max(len(query_set), 1)
+            candidates.sort(key=lambda x: -x["_sparse_score"])
+            for rank, c in enumerate(candidates, start=1):
+                c["_sparse_rank"] = rank
         else:
             for c in candidates:
-                c["_keyword_score"] = 0
-
-        candidates.sort(key=lambda x: -x["_keyword_score"])
-        for i, c in enumerate(candidates):
-            c["_sparse_rank"] = i + 1
+                c["_sparse_score"] = 0
+                c["_sparse_rank"] = len(candidates)
 
         # Step 4: 加权 RRF = (1-w)/(K+语义排名) + w/(K+关键词排名)
         w = settings.keyword_weight
@@ -191,35 +215,20 @@ class VectorService:
         for r in selected:
             r["score"] = round(r["_rrf"] / max_rrf * 100)
 
-        # 清理辅助字段
-        for r in selected:
-            del r["_dense_rank"]
-            del r["_keyword_score"]
-            del r["_sparse_rank"]
-            del r["_rrf"]
         return selected
 
-    # ── 元数据管理 ──
-
-    def rename_document_chunks(self, kb_id: str, document_id: str, new_filename: str) -> None:
-        """
-        文档重命名时同步更新 ChromaDB metadata（不重新embed，快速）。
-        通过 document_id 匹配所有相关 chunk，分批更新 filename 字段。
-        受智谱 API 限制，每批最多 50 条。
-        """
+    def rename_document_chunks(self, kb_id: str, document_id: str, new_filename: str):
+        """在 ChromaDB 中更新指定文档所有 chunk 的 filename 元数据。"""
         try:
-            collection = self.client.get_collection(
-                name=self._collection_name(kb_id),
-                embedding_function=self.embedding_fn,
+            collection = self.get_or_create_collection(kb_id)
+            result = collection.get(
+                where={"document_id": document_id},
+                include=["metadatas"],
             )
-        except ValueError:
-            return
-        try:
-            results = collection.get(where={"document_id": document_id}, include=["metadatas"])
-            if not results["ids"]:
+            if not result or not result.get("ids"):
                 return
-            ids = results["ids"]
-            metadatas = results["metadatas"]
+            ids = result["ids"]
+            metadatas = result["metadatas"]
             for m in metadatas:
                 m["filename"] = new_filename
             batch_size = 50
@@ -228,101 +237,45 @@ class VectorService:
                     ids=ids[i:i + batch_size],
                     metadatas=metadatas[i:i + batch_size],
                 )
-        except Exception as e:
-            print(f"[WARN] 更新 ChromaDB filename 失败 (document={document_id}): {e}")
+        except Exception:
+            pass
 
-    def delete_document_chunks(self, kb_id: str, document_id: str) -> None:
-        """
-        删除文档时同步清理 ChromaDB 中的相关向量。
-        通过 document_id 匹配所有 chunk 并批量删除。
-        """
+    def delete_document_chunks(self, kb_id: str, document_id: str):
+        """删除 ChromaDB 中指定文档的所有 chunk。"""
         try:
-            collection = self.client.get_collection(
-                name=self._collection_name(kb_id),
-                embedding_function=self.embedding_fn,
-            )
-        except ValueError:
-            return
-        try:
+            collection = self.get_or_create_collection(kb_id)
             collection.delete(where={"document_id": document_id})
-        except Exception as e:
-            print(f"[WARN] 删除 ChromaDB chunks 失败 (document={document_id}): {e}")
+        except Exception:
+            pass
 
-    def delete_collection(self, kb_id: str) -> None:
-        """
-        删除整个知识库的 ChromaDB 集合，并彻底清理物理残留文件。
+    def delete_collection(self, kb_id: str) -> bool:
+        """删除整个 ChromaDB 集合。
 
-        步骤：
-        1. 通过 ChromaDB 内部 SQLite 查到该集合的所有 segment UUID
-        2. 调用 ChromaDB API 删除集合（从元数据中移除）
-        3. 删除步骤 1 查到的所有 segment UUID 目录（ChromaDB 有时不自动删物理文件）
+        返回 True 表示存在且已删除；False 表示集合不存在。
+        ChromaDB 删除后，段目录可能仍有残留，下次启动时由 cleanup_pending 清理。
         """
-        import sqlite3
         import shutil
-
-        collection_name = self._collection_name(kb_id)
-        base_dir = self.client.get_settings().require("persist_directory")
-        sqlite_path = os.path.join(base_dir, "chroma.sqlite3")
-
-        # Step 1: 从 ChromaDB 内部 SQLite 查该集合的 segment UUID
-        #         ChromaDB 使用 WAL 模式，读操作不阻塞写操作
-        segment_uuids = set()
-        if os.path.exists(sqlite_path):
-            try:
-                conn = sqlite3.connect(sqlite_path, timeout=1)
-                for row in conn.execute(
-                    "SELECT s.id FROM segments s "
-                    "JOIN collections c ON s.collection = c.id "
-                    "WHERE c.name = ?", (collection_name,)
-                ).fetchall():
-                    segment_uuids.add(row[0])
-                conn.close()
-            except Exception:
-                pass  # 读不到 segment UUID 时跳过物理清理
-
-        # Step 2: 调用 ChromaDB API 删除集合
+        name = self._collection_name(kb_id)
         try:
-            self.client.delete_collection(name=collection_name)
+            collection = self.client.get_collection(name)
+        except Exception:
+            return False
+
+        # 记录待清理的段目录
+        try:
+            segments = collection.get()["ids"]
+            # 部分版本 ChromaDB 的段信息在 metadata 里
+            pending_file = os.path.join(settings.chroma_persist_dir, "_pending_cleanup.txt")
+            with open(pending_file, "a") as f:
+                for seg in os.listdir(settings.chroma_persist_dir):
+                    seg_path = os.path.join(settings.chroma_persist_dir, seg)
+                    if os.path.isdir(seg_path) and seg not in ("chroma.sqlite3", "_pending_cleanup.txt"):
+                        f.write(seg + "\n")
         except Exception:
             pass
 
-        # Step 3: 删除步骤 1 查到的所有 segment UUID 目录
-        #         Windows 上 ChromaDB 锁住 HNSW 文件无法实时删除。
-        #         记录到待清理列表，下次服务启动时再删（此时 ChromaDB 还没加载）。
-        try:
-            pending_file = os.path.join(base_dir, "_pending_cleanup.txt")
-            existing = set()
-            if os.path.exists(pending_file):
-                with open(pending_file) as pf:
-                    existing = set(line.strip() for line in pf if line.strip())
-            existing.update(segment_uuids)
-            with open(pending_file, "w") as pf:
-                pf.write("\n".join(sorted(existing)))
-        except Exception:
-            pass
-
-        # Step 4: 清理孤立 segment（有记录但集合已被删）
-        try:
-            conn = sqlite3.connect(sqlite_path, timeout=1)
-            orphan_segments = {row[0] for row in conn.execute(
-                "SELECT s.id FROM segments s "
-                "LEFT JOIN collections c ON s.collection = c.id "
-                "WHERE c.id IS NULL"
-            ).fetchall()}
-            conn.close()
-            try:
-                pending_file = os.path.join(base_dir, "_pending_cleanup.txt")
-                existing = set()
-                if os.path.exists(pending_file):
-                    with open(pending_file) as pf:
-                        existing = set(line.strip() for line in pf if line.strip())
-                existing.update(orphan_segments)
-                with open(pending_file, "w") as pf:
-                    pf.write("\n".join(sorted(existing)))
-            except Exception:
-                pass
-        except Exception:
-            pass
+        self.client.delete_collection(name)
+        return True
 
 
 # 全局单例
