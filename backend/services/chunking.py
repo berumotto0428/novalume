@@ -19,6 +19,41 @@ def _make_splitter(chunk_size: int, chunk_overlap: int) -> RecursiveCharacterTex
     )
 
 
+def _chunk_long_excel(sheet_text: str, chunk_size: int) -> list[str]:
+    """Excel 超长 Sheet 按行切割，每块保留表头（工作表名 + 列名）。"""
+    lines = sheet_text.split('\n')
+    if len(lines) < 4:
+        return [sheet_text]
+
+    header = lines[0]   # "## 工作表：xxx"
+    title = lines[1]    # "| 列1 | 列2 |"
+    sep = lines[2]      # "| --- | --- |"
+    data = lines[3:]    # 数据行
+
+    prefix = [header, title, sep]
+    prefix_len = sum(len(l) + 1 for l in prefix)  # +1 for newline
+
+    chunks = []
+    current = prefix.copy()
+    current_len = prefix_len
+
+    for line in data:
+        line_len = len(line) + 1
+        if current_len + line_len > chunk_size and len(current) > len(prefix):
+            chunks.append('\n'.join(current))
+            current = prefix.copy()
+            current_len = prefix_len
+        current.append(line)
+        current_len += line_len
+
+    if len(current) > len(prefix):
+        chunks.append('\n'.join(current))
+
+    if not chunks:
+        chunks.append(sheet_text)
+    return chunks
+
+
 def chunk_by_file_type(
     file_type: str,
     page_texts: list[str],
@@ -30,8 +65,16 @@ def chunk_by_file_type(
     page_texts 是 parse_file 返回的每页/每块文本列表。
     """
     if file_type == "excel":
-        # 每个 Sheet 一个 chunk，不切割
-        return [t for t in page_texts if t.strip()]
+        # 每个 Sheet 一个 chunk；超长 Sheet 按行切割，每块保留表头
+        chunks = []
+        for sheet_text in page_texts:
+            if not sheet_text.strip():
+                continue
+            if len(sheet_text) <= chunk_size:
+                chunks.append(sheet_text)
+            else:
+                chunks.extend(_chunk_long_excel(sheet_text, chunk_size))
+        return chunks
 
     if file_type == "image":
         # 整张图片的描述作为单个 chunk
