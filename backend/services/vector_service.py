@@ -164,9 +164,26 @@ class VectorService:
         for c in candidates:
             c["_rrf"] = (1 - w) / (K + c["_dense_rank"]) + w / (K + c["_sparse_rank"])
 
-        # Step 5: 按加权 RRF 降序取（上限 max_chunks）
+        # Step 5: 按文档均衡选取（避免大文档垄断全部结果）
         candidates.sort(key=lambda x: -x["_rrf"])
-        selected = candidates[:settings.max_chunks]
+        from collections import defaultdict
+        by_doc = defaultdict(list)
+        for c in candidates:
+            by_doc[c.get("document_id", "_")].append(c)
+        selected = []
+        # 轮流从每个文档取最高分的 chunk，直至取满 max_chunks
+        iters = {did: iter(by_doc[did]) for did in by_doc}
+        while len(selected) < settings.max_chunks and iters:
+            done = []
+            for did, it in iters.items():
+                try:
+                    selected.append(next(it))
+                    if len(selected) >= settings.max_chunks:
+                        break
+                except StopIteration:
+                    done.append(did)
+            for did in done:
+                del iters[did]
 
         # RRF 值转展示分数（放大为 0~100 区间）
         max_rrf = 1 / (settings.rrf_k + 1)  # 理论最大值（两个排名都是1）
