@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Document, Page, Outline, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
+import ReactMarkdown from 'react-markdown'
 import { ArrowLeft, ChevronLeft, ChevronRight, List } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -75,10 +76,7 @@ function MarkdownFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
         {error && <p className="text-sm text-red-400">{error}</p>}
         {text && (
           <article className="prose prose-sm max-w-none">
-            {/* Simple markdown rendering: split by double newlines for paragraphs */}
-            {text.split('\n\n').map((p, i) => (
-              <p key={i} className="mb-2">{p}</p>
-            ))}
+            <ReactMarkdown>{text}</ReactMarkdown>
           </article>
         )}
       </div>
