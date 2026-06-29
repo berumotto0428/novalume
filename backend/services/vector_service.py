@@ -87,6 +87,9 @@ class VectorService:
         collection = self.get_or_create_collection(kb_id)
         batch_size = 50
         for i in range(0, len(chunks), batch_size):
+            # 批次间间隔 1s，避免触发 API 限频
+            if i > 0:
+                time.sleep(1)
             for attempt in range(3):
                 try:
                     collection.add(
