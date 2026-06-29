@@ -302,11 +302,19 @@ def get_document_preview(
             if os.path.exists(candidate):
                 LIBRE_PATH = candidate
 
-        result = subprocess.run(
-            [LIBRE_PATH, "--headless", "--convert-to", "pdf",
-             "--outdir", output_dir, original_path],
-            capture_output=True, text=True, timeout=120,
-        )
+        try:
+            result = subprocess.run(
+                [LIBRE_PATH, "--headless", "--convert-to", "pdf",
+                 "--outdir", output_dir, original_path],
+                capture_output=True, text=True, timeout=120,
+            )
+        except FileNotFoundError:
+            raise HTTPException(500, f"文档转换失败: 找不到 LibreOffice，请检查路径 {LIBRE_PATH}")
+        except subprocess.TimeoutExpired:
+            raise HTTPException(500, "文档转换失败: LibreOffice 超时（120 秒）")
+        except Exception as e:
+            raise HTTPException(500, f"文档转换失败: {e}")
+
         if result.returncode != 0:
             raise HTTPException(500, f"文档转换失败: {result.stderr[:200]}")
 
