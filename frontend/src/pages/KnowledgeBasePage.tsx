@@ -31,7 +31,7 @@ function formatSize(bytes: number): string {
 export default function KnowledgeBasePage() {
   const { kbId } = useParams<{ kbId: string }>()
   const navigate = useNavigate()
-  const { setCurrentKb, kbVersion } = useKBStore()
+  const { setCurrentKb, kbVersion, bumpVersion } = useKBStore()
   const [kb, setKb] = useState<KnowledgeBase | null>(null)
   const [docs, setDocs] = useState<DocType[]>([])
   const [loading, setLoading] = useState(true)
@@ -78,6 +78,7 @@ export default function KnowledgeBasePage() {
       await docApi.upload(kbId, accepted, setProgress)
       toast.success(`成功上传 ${accepted.length} 个文件`)
       setRefresh((r) => r + 1)
+      bumpVersion()
     } catch (err: any) { toast.error(err.response?.data?.detail || '上传失败') }
     finally { setUploading(false) }
   }, [kbId])
@@ -117,7 +118,7 @@ export default function KnowledgeBasePage() {
   const handleDelete = async () => {
     if (!deleteTarget || !kbId) return
     setDeleting(true)
-    try { await docApi.delete(kbId, deleteTarget); toast.success('文档已删除'); setRefresh((r) => r + 1) }
+    try { await docApi.delete(kbId, deleteTarget); toast.success('文档已删除'); setRefresh((r) => r + 1); bumpVersion() }
     catch (err: any) { toast.error(err.response?.data?.detail || '删除失败') }
     finally { setDeleting(false); setDeleteTarget(null) }
   }

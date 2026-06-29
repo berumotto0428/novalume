@@ -28,20 +28,20 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
   const [loadingDocs, setLoadingDocs] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { setCurrentKb } = useKBStore()
+  const { setCurrentKb, kbVersion } = useKBStore()
 
   const isActive = location.pathname.startsWith(`/kb/${kb.id}`)
 
-  // 展开文档列表时加载数据
+  // 展开文档列表时加载数据；kbVersion 变化时刷新（上传/删除文档后同步）
   useEffect(() => {
-    if (docsExpanded && docs.length === 0 && !loadingDocs) {
+    if (docsExpanded && !loadingDocs) {
       setLoadingDocs(true)
       docApi.list(kb.id).then((res) => {
         setDocs(res.data.sort((a, b) => a.filename.localeCompare(b.filename, 'zh')))
         setLoadingDocs(false)
       }).catch(() => setLoadingDocs(false))
     }
-  }, [docsExpanded, kb.id])
+  }, [docsExpanded, kb.id, kbVersion])
 
   return (
     <div className="mb-1">
