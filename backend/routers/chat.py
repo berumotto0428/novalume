@@ -137,19 +137,18 @@ async def chat(
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
         finally:
-            # 无论成功还是中断，都保存已生成的内容（至少用户消息已保存）
-            if full_answer:
-                with SessionLocal() as save_db:
-                    save_conv = save_db.get(Conversation, conv.id)
-                    if save_conv:
-                        save_db.add(Message(
-                            conversation_id=conv.id,
-                            role="assistant",
-                            content=full_answer,
-                            sources=json.dumps(sources, ensure_ascii=False),
-                        ))
-                        save_conv.updated_at = datetime.utcnow()
-                        save_db.commit()
+            # 无论是否生成完成，都保存（切换页面后回来能看到部分内容）
+            with SessionLocal() as save_db:
+                save_conv = save_db.get(Conversation, conv.id)
+                if save_conv:
+                    save_db.add(Message(
+                        conversation_id=conv.id,
+                        role="assistant",
+                        content=full_answer or "（回答被中断，请重试）",
+                        sources=json.dumps(sources, ensure_ascii=False),
+                    ))
+                    save_conv.updated_at = datetime.utcnow()
+                    save_db.commit()
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
