@@ -192,6 +192,11 @@ export default function PdfViewerPage() {
   if (doc && doc.file_type === 'markdown' && !loading) {
     return <MarkdownFullPage doc={doc} kbId={kbId!} />
   }
+  if (doc && (doc.file_type === 'excel' || doc.file_type === 'word' || doc.file_type === 'pptx') && !loading) {
+    // Word/PPT/Excel 全页预览：导航到文档管理页，用弹窗预览
+    navigate(`/kb/${kbId}/docs`)
+    return null
+  }
 
   if (loading) return (
     <div className="h-full flex flex-col">
