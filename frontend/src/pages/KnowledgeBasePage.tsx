@@ -164,15 +164,12 @@ export default function KnowledgeBasePage() {
             {kb.description && <span className="text-sm text-gray-400 truncate hidden sm:inline">· {kb.description}</span>}
           </div>
         </div>
-        <div className="flex items-start gap-2">
-          <div className="flex flex-col items-end gap-0.5">
-            <div {...getRootProps()} className="cursor-pointer">
-              <input {...getInputProps()} />
-              <Button variant="outline" size="sm" disabled={uploading}>
-                {uploading ? (<><Upload className="h-4 w-4 mr-1" />{progress}%</>) : (<><Upload className="h-4 w-4 mr-1" />上传文件</>)}
-              </Button>
-            </div>
-            <span className="text-xs text-gray-400 whitespace-nowrap">PDF · Word · Excel · PPT · Markdown · 图片</span>
+        <div className="flex items-center gap-2">
+          <div {...getRootProps()} className="cursor-pointer">
+            <input {...getInputProps()} />
+            <Button variant="outline" size="sm" disabled={uploading}>
+              {uploading ? (<><Upload className="h-4 w-4 mr-1" />{progress}%</>) : (<><Upload className="h-4 w-4 mr-1" />上传文件</>)}
+            </Button>
           </div>
           <KBDeleteDialog kbId={kb.id} kbName={kb.name} onDeleted={() => navigate('/')} />
         </div>
@@ -182,6 +179,7 @@ export default function KnowledgeBasePage() {
       <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
         <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5 text-brand-500" />{docs.length} 个文件</span>
         <span className="flex items-center gap-1"><HardDrive className="h-3.5 w-3.5 text-brand-500" />共 {formatSize(totalSize)}</span>
+        <span className="text-xs text-gray-400 ml-auto">支持 PDF · Word · Excel · PPT · Markdown · 图片</span>
       </div>
 
       <Separator className="mb-4" />
