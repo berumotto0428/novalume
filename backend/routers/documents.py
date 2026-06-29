@@ -319,13 +319,26 @@ def get_document_text(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """返回文档的提取文本（用于 Markdown 预览）"""
+    """返回文档的文本内容（用于 Markdown/TXT 预览）。
+
+    Markdown/TXT 直接读取原文件（预览的是用户上传的原文，不是 chunks 拼接）。
+    其他格式目前不需要此接口。
+    """
     verify_kb_access(kb_id, current_user, db)
     doc = db.get(Document, doc_id)
     if not doc or doc.knowledge_base_id != kb_id:
         raise HTTPException(status_code=404, detail="文档不存在")
 
     try:
+        # Markdown/TXT：直接读取原文件
+        if doc.file_type == "markdown":
+            file_path = os.path.join(settings.file_storage_dir, doc.file_path)
+            if not os.path.exists(file_path):
+                return {"text": ""}
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                return {"text": f.read()}
+
+        # 其他格式：从 ChromaDB 拼接 chunks
         collection = vector_service.get_or_create_collection(kb_id)
         result = collection.get(
             where={"document_id": doc_id},
@@ -334,12 +347,11 @@ def get_document_text(
         if not result or not result.get("documents"):
             return {"text": ""}
 
-        # 按 chunk_index 排序后拼接
         pairs = sorted(
             zip(result["documents"], result["metadatas"]),
             key=lambda x: x[1].get("chunk_index", 0),
         )
-        text = "\n\n---\n\n".join(doc for doc, _ in pairs)
+        text = "\n\n---\n\n".join(d for d, _ in pairs)
         return {"text": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取文档内容失败: {e}")
