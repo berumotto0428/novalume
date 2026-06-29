@@ -292,8 +292,8 @@ def get_document_preview(
         if os.path.exists(preview_path):
             return FileResponse(preview_path, media_type="application/pdf")
 
-        original_path = os.path.join(settings.file_storage_dir, doc.file_path)
-        output_dir = os.path.dirname(preview_path)
+        original_path = os.path.abspath(os.path.join(settings.file_storage_dir, doc.file_path))
+        output_dir = os.path.abspath(os.path.dirname(preview_path))
 
         # Windows 和 Linux 下 LibreOffice 路径不同
         LIBRE_PATH = "libreoffice"
@@ -304,7 +304,7 @@ def get_document_preview(
                 LIBRE_PATH = candidate
             # Windows 上 LibreOffice 后台进程会持有锁，导致后续调用挂起。
             # 用独立的 HOME 目录隔离锁文件，避免死锁。
-            LO_ENV["HOME"] = os.path.join(settings.file_storage_dir, ".lo_home")
+            LO_ENV["HOME"] = os.path.abspath(os.path.join(settings.file_storage_dir, ".lo_home"))
             os.makedirs(LO_ENV["HOME"], exist_ok=True)
 
         try:
