@@ -171,6 +171,7 @@ export default function KnowledgeBasePage() {
               {uploading ? (<><Upload className="h-4 w-4 mr-1" />{progress}%</>) : (<><Upload className="h-4 w-4 mr-1" />上传文件</>)}
             </Button>
           </div>
+          <span className="text-xs text-gray-400 hidden sm:inline">PDF · Word · Excel · PPT · Markdown · 图片</span>
           <KBDeleteDialog kbId={kb.id} kbName={kb.name} onDeleted={() => navigate('/')} />
         </div>
       </div>
@@ -199,7 +200,6 @@ export default function KnowledgeBasePage() {
           <BookOpen className="h-14 w-14 mx-auto mb-3 text-brand-300 opacity-40" />
           <p className="text-sm font-medium text-brand-600">知识库还没有文档</p>
           <p className="text-xs mt-1 text-brand-400">拖拽文件到页面或点击右上角「上传文件」</p>
-          <p className="text-xs text-gray-400 mt-2">支持 PDF / Word / Excel / PPT / Markdown / 图片</p>
         </div>
       ) : (
         <div className="border border-brand-100 rounded-xl shadow-card overflow-hidden">
