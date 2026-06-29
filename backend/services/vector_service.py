@@ -86,16 +86,25 @@ class VectorService:
         批量添加文本片段到向量库。
 
         受智谱 API 限制，每批最多 50 条（batch_size=50）。
-        每条记录包含：文本 + 元数据（文件名、页码等）+ 唯一 ID。
+        遇到 API 限频自动重试（最多 3 次，指数退避）。
         """
+        import time
         collection = self.get_or_create_collection(kb_id)
         batch_size = 50
         for i in range(0, len(chunks), batch_size):
-            collection.add(
-                documents=chunks[i:i + batch_size],
-                metadatas=metadatas[i:i + batch_size],
-                ids=ids[i:i + batch_size],
-            )
+            for attempt in range(3):
+                try:
+                    collection.add(
+                        documents=chunks[i:i + batch_size],
+                        metadatas=metadatas[i:i + batch_size],
+                        ids=ids[i:i + batch_size],
+                    )
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)
+                    else:
+                        raise e
 
     def query(self, kb_id: str, query_text: str) -> list[dict]:
         """
