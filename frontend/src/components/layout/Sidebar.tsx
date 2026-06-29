@@ -16,7 +16,14 @@ const STORAGE_KEY = 'novalume_sidebar_width'
 
 export default function Sidebar() {
   const [kbs, setKbs] = useState<KnowledgeBase[]>([])
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const EXPANDED_KEY = 'novalume_expanded_kbs'
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(EXPANDED_KEY)
+      if (saved) return new Set(JSON.parse(saved))
+    } catch { /* ignore */ }
+    return new Set()
+  })
   const [showCreate, setShowCreate] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
@@ -49,6 +56,11 @@ export default function Sidebar() {
     const m = location.pathname.match(/\/kb\/([^/]+)/)
     if (m) setExpandedIds(prev => new Set(prev).add(m[1]))
   }, [location.pathname])
+
+  // 持久化展开状态
+  useEffect(() => {
+    localStorage.setItem(EXPANDED_KEY, JSON.stringify([...expandedIds]))
+  }, [expandedIds])
 
   // 持久化宽度
   useEffect(() => {

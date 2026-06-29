@@ -23,7 +23,10 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
   const [showRename, setShowRename] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [docsExpanded, setDocsExpanded] = useState(false)
+  const DOCS_KEY = () => `novalume_docs_expanded_${kb.id}`
+  const [docsExpanded, setDocsExpanded] = useState(() => {
+    try { return localStorage.getItem(DOCS_KEY()) === 'true' } catch { return false }
+  })
   const [docs, setDocs] = useState<Document[]>([])
   const [loadingDocs, setLoadingDocs] = useState(false)
   const navigate = useNavigate()
@@ -33,6 +36,10 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
   const isActive = location.pathname.startsWith(`/kb/${kb.id}`)
 
   // 展开文档列表时加载数据；kbVersion 变化时刷新（上传/删除文档后同步）
+  useEffect(() => {
+    localStorage.setItem(DOCS_KEY(), docsExpanded ? 'true' : 'false')
+  }, [docsExpanded, kb.id])
+
   useEffect(() => {
     if (docsExpanded && !loadingDocs) {
       setLoadingDocs(true)
