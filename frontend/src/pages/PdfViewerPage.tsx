@@ -34,9 +34,12 @@ function ImageFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
   return (
     <div className="h-full flex flex-col">
       <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <Button variant="ghost" size="icon" onClick={() => window.location.href = `/kb/${kbId}/docs`}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+        <button
+            onClick={() => window.location.href = `/kb/${kbId}/docs`}
+            className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
         <span className="text-sm font-medium ml-2">{doc.filename}</span>
       </div>
       <div className="flex-1 flex items-center justify-center bg-gray-100 p-4">
@@ -66,9 +69,12 @@ function MarkdownFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
   return (
     <div className="h-full flex flex-col">
       <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <Button variant="ghost" size="icon" onClick={() => window.location.href = `/kb/${kbId}/docs`}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+        <button
+            onClick={() => window.location.href = `/kb/${kbId}/docs`}
+            className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
         <span className="text-sm font-medium ml-2">{doc.filename}</span>
       </div>
       <div className="flex-1 overflow-auto p-6 bg-white">
@@ -123,9 +129,12 @@ function ExcelFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
   return (
     <div className="h-full flex flex-col">
       <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <Button variant="ghost" size="icon" onClick={() => window.location.href = `/kb/${kbId}/docs`}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+        <button
+            onClick={() => window.location.href = `/kb/${kbId}/docs`}
+            className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
         <span className="text-sm font-medium ml-2">{doc.filename}</span>
       </div>
       <div className="flex-1 overflow-auto p-6 bg-white">
