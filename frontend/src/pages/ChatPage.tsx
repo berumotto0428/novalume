@@ -16,7 +16,7 @@ import type { KnowledgeBase, ChatMessage, SourceItem, Message } from '@/types'
 export default function ChatPage() {
   const { kbId } = useParams<{ kbId: string }>()
   const navigate = useNavigate()
-  const { setCurrentKb, kbVersion } = useKBStore()
+  const { setCurrentKb, kbVersion, bumpVersion } = useKBStore()
   const [kb, setKb] = useState<KnowledgeBase | null>(null)
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -39,11 +39,18 @@ export default function ChatPage() {
     }).catch(() => setLoading(false))
   }, [kbId, kbVersion])
 
-  // 加载历史消息
+  // 输入框内容持久化（切换页面后恢复）
+  useEffect(() => {
+    if (kbId) {
+      if (inputText) sessionStorage.setItem(`chat_draft_${kbId}`, inputText)
+      else sessionStorage.removeItem(`chat_draft_${kbId}`)
+    }
+  }, [inputText, kbId])
+
+  // 加载消息 + kbVersion 变化时刷新（后台回答完成后刷新）
   useEffect(() => {
     if (!kbId) return
     setMessages([])
-
     kbApi.getMessages(kbId).then((res) => {
       const history: ChatMessage[] = res.data.map((m: Message) => ({
         id: m.id,
@@ -53,18 +60,8 @@ export default function ChatPage() {
         isStreaming: false,
       }))
       setMessages(history)
-    }).catch(() => {
-      toast.error('加载消息失败')
-    })
-  }, [kbId])
-
-  // 输入框内容持久化（切换页面后恢复）
-  useEffect(() => {
-    if (kbId) {
-      if (inputText) sessionStorage.setItem(`chat_draft_${kbId}`, inputText)
-      else sessionStorage.removeItem(`chat_draft_${kbId}`)
-    }
-  }, [inputText, kbId])
+    }).catch(() => toast.error('加载消息失败'))
+  }, [kbId, kbVersion])
 
   const handleSend = useCallback(async (question: string) => {
     if (!kbId) return
@@ -113,6 +110,8 @@ export default function ChatPage() {
               return updated
             })
             setIsStreaming(false)
+            // 通知其他页面（包括切回来后的自己）消息已更新
+            bumpVersion()
           },
           onError: (msg) => {
             toast.error(msg)
