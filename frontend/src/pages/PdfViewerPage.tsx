@@ -34,7 +34,7 @@ function ImageFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
   return (
     <div className="h-full flex flex-col">
       <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/kb/${kbId}/docs`)}>
+        <Button variant="ghost" size="icon" onClick={() => window.location.href = `/kb/${kbId}/docs`}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <span className="text-sm font-medium ml-2">{doc.filename}</span>
@@ -66,7 +66,7 @@ function MarkdownFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
   return (
     <div className="h-full flex flex-col">
       <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/kb/${kbId}/docs`)}>
+        <Button variant="ghost" size="icon" onClick={() => window.location.href = `/kb/${kbId}/docs`}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <span className="text-sm font-medium ml-2">{doc.filename}</span>
@@ -123,7 +123,7 @@ function ExcelFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
   return (
     <div className="h-full flex flex-col">
       <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/kb/${kbId}/docs`)}>
+        <Button variant="ghost" size="icon" onClick={() => window.location.href = `/kb/${kbId}/docs`}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <span className="text-sm font-medium ml-2">{doc.filename}</span>
@@ -260,7 +260,7 @@ export default function PdfViewerPage() {
   if (error) return (
     <div className="h-full flex flex-col items-center justify-center text-gray-400">
       <p>加载失败: {error}</p>
-      <Button variant="link" onClick={() => navigate(`/kb/${kbId}/docs`)}>返回文档管理</Button>
+      <Button variant="link" onClick={() => window.location.href = `/kb/${kbId}/docs`}>返回文档管理</Button>
     </div>
   )
 
@@ -285,7 +285,7 @@ export default function PdfViewerPage() {
     <div className="h-full flex flex-col">
       <div className="h-14 border-b flex items-center justify-between px-4 shrink-0 bg-white z-10">
         <div className="flex items-center gap-3 min-w-0">
-          <Button variant="ghost" size="icon" onClick={() => navigate(`/kb/${kbId}/docs`)}>
+          <Button variant="ghost" size="icon" onClick={() => window.location.href = `/kb/${kbId}/docs`}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <span className="text-sm font-medium truncate">{doc?.filename || 'PDF'}</span>
