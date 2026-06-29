@@ -75,20 +75,26 @@ export default function Sidebar() {
 
   // 恢复侧边栏滚动位置（刷新页面后保持）
   useEffect(() => {
-    if (navRef.current && !scrollRestored.current) {
-      const saved = sessionStorage.getItem("novalume_sidebar_scroll")
-      if (saved) {
-        navRef.current.scrollTop = parseInt(saved)
+    const nav = navRef.current
+    if (!nav) return
+    const saved = sessionStorage.getItem("novalume_sidebar_scroll")
+    if (!saved) return
+    const restore = () => {
+      const target = parseInt(saved)
+      if (target > 0 && nav.scrollHeight > nav.clientHeight) {
+        nav.scrollTop = target
       }
-      scrollRestored.current = true
     }
+    // 立即尝试恢复（如果内容已加载完毕）
+    restore()
+    // 用 MutationObserver 监听内容变化，内容增长时再次尝试恢复
+    const observer = new MutationObserver(() => restore())
+    observer.observe(nav, { childList: true, subtree: true })
     const saveScroll = () => {
-      if (navRef.current) {
-        sessionStorage.setItem("novalume_sidebar_scroll", String(navRef.current.scrollTop))
-      }
+      sessionStorage.setItem("novalume_sidebar_scroll", String(nav.scrollTop))
     }
     window.addEventListener("beforeunload", saveScroll)
-    return () => window.removeEventListener("beforeunload", saveScroll)
+    return () => { observer.disconnect(); window.removeEventListener("beforeunload", saveScroll) }
   }, [])
 
   // 持久化宽度
