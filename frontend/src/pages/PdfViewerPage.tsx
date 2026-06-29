@@ -16,142 +16,15 @@ pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
 
 const RENDER_BUFFER = 8
 
-function ImageFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
-  const navigate = useNavigate()
-  const [imgUrl, setImgUrl] = useState<string | null>(null)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    const token = useAuthStore.getState().token
-    fetch(`/api/knowledge-bases/${kbId}/documents/${doc.id}/file`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob() })
-      .then((blob) => setImgUrl(URL.createObjectURL(blob)))
-      .catch((e) => setError(e.message))
-  }, [doc.id, kbId])
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <a
-            href={`/kb/${kbId}/docs`}
-            className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0 no-underline"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </a>
-        <span className="text-sm font-medium ml-2">{doc.filename}</span>
-      </div>
-      <div className="flex-1 flex items-center justify-center bg-gray-100 p-4">
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        {imgUrl && <img src={imgUrl} alt={doc.filename} className="max-w-full max-h-full object-contain" />}
-      </div>
-    </div>
-  )
-}
-
-function MarkdownFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
-  const navigate = useNavigate()
-  const [text, setText] = useState<string>('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    const token = useAuthStore.getState().token
-    fetch(`/api/knowledge-bases/${kbId}/documents/${doc.id}/text`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then((data) => { setText(data.text || ''); setLoading(false) })
-      .catch((e) => { setError(e.message); setLoading(false) })
-  }, [doc.id, kbId])
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <a
-            href={`/kb/${kbId}/docs`}
-            className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0 no-underline"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </a>
-        <span className="text-sm font-medium ml-2">{doc.filename}</span>
-      </div>
-      <div className="flex-1 overflow-auto p-6 bg-white">
-        {loading && <Skeleton className="h-64 w-full" />}
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        {text && (
-          <article className="prose prose-sm max-w-none">
-            <ReactMarkdown>{text}</ReactMarkdown>
-          </article>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ExcelFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
-  const navigate = useNavigate()
-  const [html, setHtml] = useState<string>('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    const token = useAuthStore.getState().token
-    fetch(`/api/knowledge-bases/${kbId}/documents/${doc.id}/file`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer() })
-      .then(async (buf) => {
-        const XLSX = await import('xlsx')
-        const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
-        const parts: string[] = []
-        wb.SheetNames.forEach((name) => {
-          const sheet = wb.Sheets[name]
-          const json = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][]
-          if (json.length === 0) return
-          const hdr = (json[0] || []).map(c => c ?? '')
-          let t = `<table class="w-full border-collapse border border-gray-300 text-sm mb-6">`
-          t += `<thead><tr>${hdr.map(h => `<th class="border border-gray-300 bg-gray-100 px-2 py-1 text-left font-medium">${h.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</th>`).join('')}</tr></thead><tbody>`
-          for (let i = 1; i < json.length; i++) {
-            const row = json[i] || []
-            t += `<tr>${hdr.map((_, ci) => `<td class="border border-gray-300 px-2 py-0.5">${String(row[ci] ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>`).join('')}</tr>`
-          }
-          t += '</tbody></table>'
-          parts.push(`<div class="mb-4"><h3 class="text-sm font-semibold mb-1">${name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</h3>${t}</div>`)
-        })
-        setHtml(parts.join('\n'))
-        setLoading(false)
-      })
-      .catch((e) => { setError(e.message); setLoading(false) })
-  }, [doc.id, kbId])
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
-        <a
-            href={`/kb/${kbId}/docs`}
-            className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0 no-underline"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </a>
-        <span className="text-sm font-medium ml-2">{doc.filename}</span>
-      </div>
-      <div className="flex-1 overflow-auto p-6 bg-white">
-        {loading && <p className="text-sm text-gray-400 text-center mt-20">加载中...</p>}
-        {error && <p className="text-sm text-red-400 text-center mt-20">{error}</p>}
-        {html && <div dangerouslySetInnerHTML={{ __html: html }} />}
-      </div>
-    </div>
-  )
-}
-
 export default function PdfViewerPage() {
   const { kbId, docId } = useParams<{ kbId: string; docId: string }>()
   const navigate = useNavigate()
 
   const [doc, setDoc] = useState<DocType | null>(null)
   const [pdfData, setPdfData] = useState<ArrayBuffer | null>(null)
+  const [imgUrl, setImgUrl] = useState<string | null>(null)
+  const [markdownText, setMarkdownText] = useState<string>('')
+  const [excelHtml, setExcelHtml] = useState<string>('')
   const [numPages, setNumPages] = useState(0)
   const [pageNumber, setPageNumber] = useState(1)
   const [jumpInput, setJumpInput] = useState('1')
@@ -171,31 +44,64 @@ export default function PdfViewerPage() {
   useEffect(() => {
     if (!kbId || !docId) return
 
-    // 先获取文档信息，根据 file_type 选择加载方式
     docApi.get(kbId, docId).then((res) => {
       const docData = res.data
       setDoc(docData)
       const ft = docData.file_type
       const token = useAuthStore.getState().token
 
-      if (ft === 'image' || ft === 'markdown') {
-        // 图片和 Markdown 由子组件自行加载，这里完成 loading 即可
-        setLoading(false)
-        return
+      if (ft === 'image') {
+        fetch(`/api/knowledge-bases/${kbId}/documents/${docId}/file`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob() })
+          .then((blob) => { setImgUrl(URL.createObjectURL(blob)); setLoading(false) })
+          .catch((e) => { setError(e.message); setLoading(false) })
+      } else if (ft === 'markdown') {
+        fetch(`/api/knowledge-bases/${kbId}/documents/${docId}/text`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+          .then((data) => { setMarkdownText(data.text || ''); setLoading(false) })
+          .catch((e) => { setError(e.message); setLoading(false) })
+      } else if (ft === 'excel') {
+        fetch(`/api/knowledge-bases/${kbId}/documents/${docId}/file`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer() })
+          .then(async (buf) => {
+            const XLSX = await import('xlsx')
+            const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
+            const parts: string[] = []
+            wb.SheetNames.forEach((name) => {
+              const sheet = wb.Sheets[name]
+              const json = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][]
+              if (json.length === 0) return
+              const hdr = (json[0] || []).map(c => c ?? '')
+              let t = `<table class="w-full border-collapse border border-gray-300 text-sm mb-6">`
+              t += `<thead><tr>${hdr.map(h => `<th class="border border-gray-300 bg-gray-100 px-2 py-1 text-left font-medium">${h.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</th>`).join('')}</tr></thead><tbody>`
+              for (let i = 1; i < json.length; i++) {
+                const row = json[i] || []
+                t += `<tr>${hdr.map((_, ci) => `<td class="border border-gray-300 px-2 py-0.5">${String(row[ci] ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>`).join('')}</tr>`
+              }
+              t += '</tbody></table>'
+              parts.push(`<div class="mb-4"><h3 class="text-sm font-semibold mb-1">${name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</h3>${t}</div>`)
+            })
+            setExcelHtml(parts.join('\n'))
+            setLoading(false)
+          })
+          .catch((e) => { setError(e.message); setLoading(false) })
+      } else {
+        // pdf / word / pptx
+        const isPreview = ft === 'word' || ft === 'pptx'
+        const url = isPreview
+          ? `/api/knowledge-bases/${kbId}/documents/${docId}/preview`
+          : `/api/knowledge-bases/${kbId}/documents/${docId}/file`
+        fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+          .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer() })
+          .then((buf) => { if (buf.byteLength === 0) throw new Error('空文件'); setPdfData(buf); setLoading(false) })
+          .catch((err) => { setError(err.message); setLoading(false) })
       }
-
-      // pdf / word / pptx：通过 /file 或 /preview 获取 PDF
-      const isPreview = ft === 'word' || ft === 'pptx'
-      const url = isPreview
-        ? `/api/knowledge-bases/${kbId}/documents/${docId}/preview`
-        : `/api/knowledge-bases/${kbId}/documents/${docId}/file`
-
-      fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer() })
-        .then((buf) => { if (buf.byteLength === 0) throw new Error('空文件'); setPdfData(buf); setLoading(false) })
-        .catch((err) => { setError(err.message); setLoading(false) })
     }).catch(() => setLoading(false))
   }, [kbId, docId])
 
@@ -218,8 +124,7 @@ export default function PdfViewerPage() {
       const lastVisible = Math.ceil((scrollTop + h) / pageStep)
       setRange({ start: Math.max(1, firstVisible - RENDER_BUFFER), end: Math.min(numPages, lastVisible + RENDER_BUFFER) })
       const midPage = Math.round((scrollTop + h / 2) / pageStep)
-      const cur = Math.max(1, Math.min(numPages, midPage))
-      setPageNumber(cur); setJumpInput(String(cur))
+      setPageNumber(midPage); setJumpInput(String(midPage))
       scrollTicking.current = false
     })
   }, [numPages, pageStep])
@@ -247,17 +152,9 @@ export default function PdfViewerPage() {
     }
   }, [scrollToPage])
 
-  // 非 PDF 格式：渲染专用页面
-  if (doc && doc.file_type === 'image' && !loading) {
-    return <ImageFullPage doc={doc} kbId={kbId!} />
-  }
-  if (doc && doc.file_type === 'markdown' && !loading) {
-    return <MarkdownFullPage doc={doc} kbId={kbId!} />
-  }
-  if (doc && doc.file_type === 'excel' && !loading) {
-    // Excel 全页预览：用 SheetJS 渲染
-    return <ExcelFullPage doc={doc} kbId={kbId!} />
-  }
+  const goToDocs = useCallback(() => {
+    window.location.href = `/kb/${kbId}/docs`
+  }, [kbId])
 
   if (loading) return (
     <div className="h-full flex flex-col">
@@ -269,10 +166,58 @@ export default function PdfViewerPage() {
   if (error) return (
     <div className="h-full flex flex-col items-center justify-center text-gray-400">
       <p>加载失败: {error}</p>
-      <Button variant="link" onClick={() => window.location.href = `/kb/${kbId}/docs`}>返回文档管理</Button>
+      <Button variant="link" onClick={goToDocs}>返回文档管理</Button>
     </div>
   )
 
+  // ── 非 PDF 内容：图片 / Markdown / Excel ──
+  if (doc && doc.file_type === 'image') return (
+    <div className="h-full flex flex-col">
+      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
+        <button onClick={goToDocs} className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <span className="text-sm font-medium ml-2">{doc.filename}</span>
+      </div>
+      <div className="flex-1 flex items-center justify-center bg-gray-100 p-4">
+        {imgUrl && <img src={imgUrl} alt={doc.filename} className="max-w-full max-h-full object-contain" />}
+      </div>
+    </div>
+  )
+
+  if (doc && doc.file_type === 'markdown') return (
+    <div className="h-full flex flex-col">
+      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
+        <button onClick={goToDocs} className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <span className="text-sm font-medium ml-2">{doc.filename}</span>
+      </div>
+      <div className="flex-1 overflow-auto p-6 bg-white">
+        {markdownText && (
+          <article className="prose prose-sm max-w-none">
+            <ReactMarkdown>{markdownText}</ReactMarkdown>
+          </article>
+        )}
+      </div>
+    </div>
+  )
+
+  if (doc && doc.file_type === 'excel') return (
+    <div className="h-full flex flex-col">
+      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
+        <button onClick={goToDocs} className="inline-flex items-center justify-center rounded-lg h-10 w-10 hover:bg-brand-50 hover:text-brand-600 transition-colors shrink-0">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <span className="text-sm font-medium ml-2">{doc.filename}</span>
+      </div>
+      <div className="flex-1 overflow-auto p-6 bg-white">
+        {excelHtml && <div dangerouslySetInnerHTML={{ __html: excelHtml }} />}
+      </div>
+    </div>
+  )
+
+  // ── PDF / Word / PPT 内容 ──
   const pageHeightPx = Math.round(pageWidth * 1.414)
   const pages = []
   for (let i = 1; i <= numPages; i++) {
@@ -294,7 +239,7 @@ export default function PdfViewerPage() {
     <div className="h-full flex flex-col">
       <div className="h-14 border-b flex items-center justify-between px-4 shrink-0 bg-white z-10">
         <div className="flex items-center gap-3 min-w-0">
-          <Button variant="ghost" size="icon" onClick={() => window.location.href = `/kb/${kbId}/docs`}>
+          <Button variant="ghost" size="icon" onClick={goToDocs}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <span className="text-sm font-medium truncate">{doc?.filename || 'PDF'}</span>
@@ -324,18 +269,6 @@ export default function PdfViewerPage() {
             <div className="flex-1 absolute inset-0 z-0" onClick={() => setShowOutline(false)} />
             <div className="w-64 border-r bg-white overflow-y-auto shrink-0 p-4 text-sm relative z-10">
               <p className="text-xs text-gray-400 mb-3 font-medium tracking-wide" style={{ letterSpacing: '0.05em' }}>目 录</p>
-              <style>{`
-              .pdf-outline, .pdf-outline ul { list-style: none; padding: 0; margin: 0; }
-              .pdf-outline li { margin: 0; }
-              .pdf-outline a {
-                display: block; padding: 5px 8px; color: #4f6ef7; text-decoration: underline;
-                text-underline-offset: 2px; border-radius: 4px; font-size: 13px;
-                transition: background-color 0.15s;
-              }
-              .pdf-outline a:hover { background-color: #eef2ff; }
-              .pdf-outline ul ul a { padding-left: 20px; font-size: 12px; color: #7c8cf7; }
-              .pdf-outline ul ul ul a { padding-left: 32px; font-size: 11px; color: #a5b0fc; }
-            `}</style>
               <Outline pdf={pdfDocRef.current} onItemClick={handleItemClick} className="pdf-outline" />
             </div>
           </>
