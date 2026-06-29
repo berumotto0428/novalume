@@ -48,7 +48,15 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
       {/* KB row */}
       <div className={`flex items-center rounded-lg transition-colors ${isActive ? 'bg-brand-50' : 'hover:bg-brand-50/70'}`}>
         <button
-          onClick={() => { setCurrentKb(kb.id, kb.name); onToggle(); navigate(`/kb/${kb.id}/docs`) }}
+          onClick={() => {
+              setCurrentKb(kb.id, kb.name);
+              if (isActive) {
+                onToggle()
+              } else {
+                if (!isExpanded) onToggle()
+                navigate(`/kb/${kb.id}/docs`)
+              }
+            }}
           className="flex items-center gap-2 px-2 py-2 flex-1 min-w-0 text-left"
         >
           {isExpanded ? <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />}
@@ -79,7 +87,15 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
           {/* 文档管理 - 整行可点击展开 + 跳转 */}
           <div>
             <button
-              onClick={() => { setDocsExpanded(!docsExpanded); setCurrentKb(kb.id, kb.name); navigate(`/kb/${kb.id}/docs`) }}
+              onClick={() => {
+                  setCurrentKb(kb.id, kb.name);
+                  if (location.pathname === `/kb/${kb.id}/docs`) {
+                    setDocsExpanded(!docsExpanded)
+                  } else {
+                    setDocsExpanded(true)
+                    navigate(`/kb/${kb.id}/docs`)
+                  }
+                }}
               className={`w-full flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors ${
                 location.pathname === `/kb/${kb.id}/docs` ? 'text-brand-600 bg-brand-50' : 'text-gray-600 hover:bg-brand-50/70'
               }`}
