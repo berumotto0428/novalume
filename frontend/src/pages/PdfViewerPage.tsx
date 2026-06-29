@@ -84,6 +84,59 @@ function MarkdownFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
   )
 }
 
+function ExcelFullPage({ doc, kbId }: { doc: DocType; kbId: string }) {
+  const navigate = useNavigate()
+  const [html, setHtml] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const token = useAuthStore.getState().token
+    fetch(`/api/knowledge-bases/${kbId}/documents/${doc.id}/file`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.arrayBuffer() })
+      .then(async (buf) => {
+        const XLSX = await import('xlsx')
+        const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
+        const parts: string[] = []
+        wb.SheetNames.forEach((name) => {
+          const sheet = wb.Sheets[name]
+          const json = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 }) as string[][]
+          if (json.length === 0) return
+          const hdr = (json[0] || []).map(c => c ?? '')
+          let t = `<table class="w-full border-collapse border border-gray-300 text-sm mb-6">`
+          t += `<thead><tr>${hdr.map(h => `<th class="border border-gray-300 bg-gray-100 px-2 py-1 text-left font-medium">${h.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</th>`).join('')}</tr></thead><tbody>`
+          for (let i = 1; i < json.length; i++) {
+            const row = json[i] || []
+            t += `<tr>${hdr.map((_, ci) => `<td class="border border-gray-300 px-2 py-0.5">${String(row[ci] ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</td>`).join('')}</tr>`
+          }
+          t += '</tbody></table>'
+          parts.push(`<div class="mb-4"><h3 class="text-sm font-semibold mb-1">${name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</h3>${t}</div>`)
+        })
+        setHtml(parts.join('\n'))
+        setLoading(false)
+      })
+      .catch((e) => { setError(e.message); setLoading(false) })
+  }, [doc.id, kbId])
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="h-14 border-b flex items-center px-4 shrink-0 bg-white">
+        <Button variant="ghost" size="icon" onClick={() => navigate(`/kb/${kbId}/docs`)}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-sm font-medium ml-2">{doc.filename}</span>
+      </div>
+      <div className="flex-1 overflow-auto p-6 bg-white">
+        {loading && <p className="text-sm text-gray-400 text-center mt-20">加载中...</p>}
+        {error && <p className="text-sm text-red-400 text-center mt-20">{error}</p>}
+        {html && <div dangerouslySetInnerHTML={{ __html: html }} />}
+      </div>
+    </div>
+  )
+}
+
 export default function PdfViewerPage() {
   const { kbId, docId } = useParams<{ kbId: string; docId: string }>()
   const navigate = useNavigate()
@@ -192,10 +245,9 @@ export default function PdfViewerPage() {
   if (doc && doc.file_type === 'markdown' && !loading) {
     return <MarkdownFullPage doc={doc} kbId={kbId!} />
   }
-  if (doc && (doc.file_type === 'excel' || doc.file_type === 'word' || doc.file_type === 'pptx') && !loading) {
-    // Word/PPT/Excel 全页预览：导航到文档管理页，用弹窗预览
-    navigate(`/kb/${kbId}/docs`)
-    return null
+  if (doc && doc.file_type === 'excel' && !loading) {
+    // Excel 全页预览：用 SheetJS 渲染
+    return <ExcelFullPage doc={doc} kbId={kbId!} />
   }
 
   if (loading) return (
