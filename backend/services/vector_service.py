@@ -85,17 +85,32 @@ class VectorService:
         """
         批量添加文本片段到向量库。
 
-        受智谱 API 限制，每批最多 50 条（batch_size=50）。
-        遇到 API 限频自动重试（最多 3 次，指数退避）。
+        先算 Embedding 再写入，避免 ChromaDB 内建嵌入函数的超时问题。
+        每批 10 条，遇到 API 限频重试 3 次。
         """
         import time
+        from openai import OpenAI
+
         collection = self.get_or_create_collection(kb_id)
+        client = OpenAI(
+            api_key=settings.embedding_api_key,
+            base_url=settings.embedding_base_url,
+        )
         batch_size = 10
+
         for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
             for attempt in range(3):
                 try:
+                    resp = client.embeddings.create(
+                        model=settings.embedding_model,
+                        input=batch,
+                        timeout=30,
+                    )
+                    embeddings = [d.embedding for d in resp.data]
                     collection.add(
-                        documents=chunks[i:i + batch_size],
+                        embeddings=embeddings,
+                        documents=batch,
                         metadatas=metadatas[i:i + batch_size],
                         ids=ids[i:i + batch_size],
                     )
