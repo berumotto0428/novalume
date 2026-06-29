@@ -164,14 +164,16 @@ export default function KnowledgeBasePage() {
             {kb.description && <span className="text-sm text-gray-400 truncate hidden sm:inline">· {kb.description}</span>}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div {...getRootProps()} className="cursor-pointer">
-            <input {...getInputProps()} />
-            <Button variant="outline" size="sm" disabled={uploading}>
-              {uploading ? (<><Upload className="h-4 w-4 mr-1" />{progress}%</>) : (<><Upload className="h-4 w-4 mr-1" />上传文件</>)}
-            </Button>
+        <div className="flex items-start gap-2">
+          <div className="flex flex-col items-end gap-0.5">
+            <div {...getRootProps()} className="cursor-pointer">
+              <input {...getInputProps()} />
+              <Button variant="outline" size="sm" disabled={uploading}>
+                {uploading ? (<><Upload className="h-4 w-4 mr-1" />{progress}%</>) : (<><Upload className="h-4 w-4 mr-1" />上传文件</>)}
+              </Button>
+            </div>
+            <span className="text-xs text-gray-400 whitespace-nowrap">PDF · Word · Excel · PPT · Markdown · 图片</span>
           </div>
-          <span className="text-xs text-gray-400 hidden sm:inline">PDF · Word · Excel · PPT · Markdown · 图片</span>
           <KBDeleteDialog kbId={kb.id} kbName={kb.name} onDeleted={() => navigate('/')} />
         </div>
       </div>
