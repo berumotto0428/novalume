@@ -82,57 +82,55 @@ def _describe_image(img_bytes: bytes, img_ext: str = "png") -> str:
 def parse_pdf(file_path: str) -> tuple[str, int, list[str]]:
     """
     解析 PDF 文件。
+
     - 每页提取文字（pymupdf）
-    - 若页面文字少于 30 字（扫描页），整页渲染为图片交给视觉模型
-    - 若页面有嵌入图片（> 5KB），提取并交给视觉模型描述
-    - 文字 + 图片描述合并为该页文本
+    - 文字少于 30 字的页整页渲染为图片交给视觉模型
+    - 嵌入图片（>5KB）提取并交给视觉模型
+    - 视觉模型调用已并行化，多个图片同时请求
     """
     import fitz
     doc = fitz.open(file_path)
-    page_texts = []
+    page_count = doc.page_count
+    page_parts = [[] for _ in range(page_count)]  # page_index -> [text_parts]
+    tasks = []  # (page_index, img_bytes, ext)
 
     for i, page in enumerate(doc):
-        parts = []
-
-        # 提取文字
         text = page.get_text("text").strip()
+        is_scan = len(text) < 30
 
-        if len(text) < 30:
-            # 文字极少：可能是扫描页，整页渲染为图片
-            desc = ""
-            client = _get_vision_client()
-            if client:
-                mat = fitz.Matrix(2, 2)  # 2倍缩放保证清晰度
-                pix = page.get_pixmap(matrix=mat)
-                img_bytes = pix.tobytes("png")
-                desc = _describe_image(img_bytes, "png")
-            if desc:
-                parts.append(f"[扫描页内容]\n{desc}")
-            elif text:
-                parts.append(text)
-        else:
-            parts.append(text)
-            # 提取页面嵌入图片
-            client = _get_vision_client()
-            if client:
-                for img_info in page.get_images(full=True):
-                    xref = img_info[0]
-                    base_image = doc.extract_image(xref)
-                    img_bytes = base_image["image"]
-                    img_ext = base_image["ext"]
-                    if len(img_bytes) < 5000:  # 跳过小图标
+        # 普通页：收集文字和嵌入图片
+        if not is_scan:
+            page_parts[i].append(text)
+            if _get_vision_client():
+                for info in page.get_images(full=True):
+                    base = doc.extract_image(info[0])
+                    blob = base["image"]
+                    if len(blob) < 5000:
                         continue
-                    # 统一扩展名为标准 MIME 格式
-                    if img_ext == "jpg":
-                        img_ext = "jpeg"
-                    desc = _describe_image(img_bytes, img_ext)
-                    if desc:
-                        parts.append(f"[图片内容]\n{desc}")
-
-        page_texts.append("\n\n".join(parts))
+                    ext = "jpeg" if base["ext"] == "jpg" else base["ext"]
+                    tasks.append((i, blob, ext, False))
+        elif _get_vision_client():
+            # 扫描页：整页渲染为图片
+            mat = fitz.Matrix(2, 2)
+            pix = page.get_pixmap(matrix=mat)
+            tasks.append((i, pix.tobytes("png"), "png", True))
 
     doc.close()
-    return "\n\n".join(page_texts), len(page_texts), page_texts
+
+    # 并行调用视觉模型
+    if tasks and _get_vision_client():
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            fut_map = {pool.submit(_describe_image, blob, ext): (idx, is_scan)
+                       for idx, blob, ext, is_scan in tasks}
+            for fut in as_completed(fut_map):
+                idx, is_scan = fut_map[fut]
+                desc = fut.result()
+                if desc:
+                    tag = "[扫描页内容]" if is_scan else "[图片内容]"
+                    page_parts[idx].append(tag + "\n" + desc)
+
+    page_texts = ["\n\n".join(parts) for parts in page_parts]
+    return "\n\n".join(page_texts), page_count, page_texts
 
 
 # ────────────────────────────────────────────
