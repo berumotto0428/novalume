@@ -14,6 +14,7 @@ PPT(.pptx)、图片(.jpg/.jpeg/.png)
 """
 import os
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 from config import settings
 
