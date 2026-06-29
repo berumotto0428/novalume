@@ -85,7 +85,7 @@ class VectorService:
         """批量添加文本片段到向量库（与改动前逻辑一致，加了重试）。"""
         import time
         collection = self.get_or_create_collection(kb_id)
-        batch_size = 10
+        batch_size = 50
         for i in range(0, len(chunks), batch_size):
             for attempt in range(3):
                 try:
