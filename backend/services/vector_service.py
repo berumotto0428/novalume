@@ -82,35 +82,15 @@ class VectorService:
         )
 
     def add_chunks(self, kb_id: str, chunks: list[str], metadatas: list[dict], ids: list[str]) -> None:
-        """
-        批量添加文本片段到向量库。
-
-        先算 Embedding 再写入，避免 ChromaDB 内建嵌入函数的超时问题。
-        每批 10 条，遇到 API 限频重试 3 次。
-        """
+        """批量添加文本片段到向量库（与改动前逻辑一致，加了重试）。"""
         import time
-        from openai import OpenAI
-
         collection = self.get_or_create_collection(kb_id)
-        client = OpenAI(
-            api_key=settings.embedding_api_key,
-            base_url=settings.embedding_base_url,
-        )
         batch_size = 10
-
         for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i + batch_size]
             for attempt in range(3):
                 try:
-                    resp = client.embeddings.create(
-                        model=settings.embedding_model,
-                        input=batch,
-                        timeout=30,
-                    )
-                    embeddings = [d.embedding for d in resp.data]
                     collection.add(
-                        embeddings=embeddings,
-                        documents=batch,
+                        documents=chunks[i:i + batch_size],
                         metadatas=metadatas[i:i + batch_size],
                         ids=ids[i:i + batch_size],
                     )
