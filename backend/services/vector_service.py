@@ -50,7 +50,9 @@ class VectorService:
     def get_or_create_collection(self, kb_id: str):
         name = self._collection_name(kb_id)
         try:
-            return self.client.get_collection(name)
+            return self.client.get_collection(
+                name, embedding_function=self.embedding_fn
+            )
         except Exception:
             return self.client.create_collection(
                 name=name,
