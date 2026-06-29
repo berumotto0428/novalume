@@ -92,6 +92,7 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
                   if (location.pathname === `/kb/${kb.id}/docs`) {
                     setDocsExpanded(!docsExpanded)
                   } else {
+                    if (!isExpanded) onToggle()
                     setDocsExpanded(true)
                     navigate(`/kb/${kb.id}/docs`)
                   }
@@ -116,7 +117,11 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
                   docs.map((doc) => (
                     <button
                       key={doc.id}
-                      onClick={() => { setCurrentKb(kb.id, kb.name); navigate(`/kb/${kb.id}/docs/${doc.id}`) }}
+                      onClick={() => {
+                        setCurrentKb(kb.id, kb.name);
+                        if (!isExpanded) onToggle()
+                        navigate(`/kb/${kb.id}/docs/${doc.id}`)
+                      }}
                       className={`w-full flex items-center gap-2 px-2 py-1 rounded-md text-xs transition-colors ${
                         location.pathname === `/kb/${kb.id}/docs/${doc.id}` ? 'bg-brand-50 text-brand-600' : 'text-gray-500 hover:text-brand-600 hover:bg-brand-50/40'
                       }`}
@@ -133,7 +138,11 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
 
           {/* 对话 - 与文档管理对齐 */}
           <button
-            onClick={() => { setCurrentKb(kb.id, kb.name); navigate(`/kb/${kb.id}/chat`) }}
+            onClick={() => {
+                setCurrentKb(kb.id, kb.name);
+                if (!isExpanded) onToggle()
+                navigate(`/kb/${kb.id}/chat`)
+              }}
             className={`w-full flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors ${
               location.pathname.startsWith(`/kb/${kb.id}/chat`) ? 'bg-brand-50 text-brand-600' : 'text-gray-600 hover:bg-gray-100'
             }`}
