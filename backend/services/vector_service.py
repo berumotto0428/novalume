@@ -1,7 +1,8 @@
 """
 向量数据库服务，封装 ChromaDB 的增删查操作。
 
-使用 ChromaDB PersistentClient，数据持久化在本地磁盘。
+不使用 ChromaDB 内建的嵌入函数（embedding-3 非标准模型会导致序列化错误），
+所有向量预计算后再写入。
 """
 import os
 import warnings
@@ -20,6 +21,7 @@ class VectorService:
 
     @property
     def embedding_fn(self):
+        """返回 OpenAI 兼容的嵌入函数（智谱 embedding-3，2048 维）。"""
         if self._embedding_fn is None:
             self._embedding_fn = OpenAIEmbeddingFunction(
                 api_key=settings.embedding_api_key,
@@ -48,28 +50,38 @@ class VectorService:
         return f"kb_{kb_id.replace('-', '_')}"
 
     def get_or_create_collection(self, kb_id: str):
+        """
+        获取或创建集合。集合本身不绑定嵌入函数（避免 embedding-3 序列化问题），
+        调用方需自行准备向量。
+        """
         name = self._collection_name(kb_id)
         try:
-            return self.client.get_collection(
-                name, embedding_function=self.embedding_fn
-            )
+            return self.client.get_collection(name)
         except Exception:
             return self.client.create_collection(
                 name=name,
-                embedding_function=self.embedding_fn,
+                embedding_function=None,
                 metadata={"hnsw:space": "cosine"},
             )
 
     def add_chunks(self, kb_id: str, chunks: list[str], metadatas: list[dict], ids: list[str]) -> None:
-        """批量添加文本片段到向量库。"""
+        """
+        批量添加文本片段到向量库。
+
+        用 self.embedding_fn 预计算向量后写入（集合本身不绑定嵌入函数，
+        避免 embedding-3 被 ChromaDB 错误序列化导致维度问题）。
+        """
         import time
         collection = self.get_or_create_collection(kb_id)
         batch_size = 50
         for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
             for attempt in range(3):
                 try:
+                    embeddings = self.embedding_fn(batch)
                     collection.add(
-                        documents=chunks[i:i + batch_size],
+                        embeddings=embeddings,
+                        documents=batch,
                         metadatas=metadatas[i:i + batch_size],
                         ids=ids[i:i + batch_size],
                     )
@@ -80,34 +92,35 @@ class VectorService:
                     else:
                         raise
 
+    def _embed_query(self, text: str) -> list[float]:
+        """用 embedding_fn 将查询文本转为向量。"""
+        return self.embedding_fn([text])[0]
+
     def query(self, kb_id: str, query_text: str) -> list[dict]:
         """
         RRF 混合搜索主方法。
 
-        流程：
-        1. ChromaDB cosine 检索 n_results×3 个候选
-        2. 过滤掉 distance > top_k_max_distance 的
-        3. jieba 分词 → 关键词命中率评分
-        4. RRF 融合：语义排名 + 关键词排名
+        预计算查询向量后直接检索（避免 ChromaDB 嵌入函数维度问题）。
         """
         import jieba
         import re
         from collections import Counter
 
         collection = self.get_or_create_collection(kb_id)
-
-        # Step 1: 从 ChromaDB 取候选（给后续过滤留足空间）
         fetch_count = min(settings.fetch_count, collection.count())
         if fetch_count == 0:
             return []
 
+        # 预计算查询向量
+        query_embedding = self._embed_query(query_text)
+
         results = collection.query(
-            query_texts=[query_text],
+            query_embeddings=[query_embedding],
             n_results=fetch_count,
             include=["documents", "metadatas", "distances"],
         )
 
-        # Step 2: 阈值过滤 — 所有 distance ≤ 0.55 的都保留
+        # Step 2: 阈值过滤
         candidates = []
         for doc, meta, dist in zip(
             results["documents"][0],
@@ -130,13 +143,10 @@ class VectorService:
             return []
 
         # ── 加权 RRF 排序 ──
-
-        # Step 3a: Dense rank（按余弦距离升序排列）
         candidates.sort(key=lambda x: x["distance"])
         for rank, c in enumerate(candidates, start=1):
             c["_dense_rank"] = rank
 
-        # Step 3b: 关键词评分（Sparse rank）
         query_words = [
             w for w in jieba.lcut(query_text)
             if len(w) > 1 and not re.match(r'^\d+$', w)
@@ -158,35 +168,15 @@ class VectorService:
                 c["_sparse_score"] = 0
                 c["_sparse_rank"] = len(candidates)
 
-        # Step 4: 加权 RRF = (1-w)/(K+语义排名) + w/(K+关键词排名)
         w = settings.keyword_weight
         K = settings.rrf_k
         for c in candidates:
             c["_rrf"] = (1 - w) / (K + c["_dense_rank"]) + w / (K + c["_sparse_rank"])
 
-        # Step 5: 按文档均衡选取（避免大文档垄断全部结果）
         candidates.sort(key=lambda x: -x["_rrf"])
-        from collections import defaultdict
-        by_doc = defaultdict(list)
-        for c in candidates:
-            by_doc[c.get("document_id", "_")].append(c)
-        selected = []
-        # 轮流从每个文档取最高分的 chunk，直至取满 max_chunks
-        iters = {did: iter(by_doc[did]) for did in by_doc}
-        while len(selected) < settings.max_chunks and iters:
-            done = []
-            for did, it in iters.items():
-                try:
-                    selected.append(next(it))
-                    if len(selected) >= settings.max_chunks:
-                        break
-                except StopIteration:
-                    done.append(did)
-            for did in done:
-                del iters[did]
+        selected = candidates[:settings.max_chunks]
 
-        # RRF 值转展示分数（放大为 0~100 区间）
-        max_rrf = 1 / (settings.rrf_k + 1)  # 理论最大值（两个排名都是1）
+        max_rrf = 1 / (settings.rrf_k + 1)
         for r in selected:
             r["score"] = round(r["_rrf"] / max_rrf * 100)
 
@@ -224,22 +214,14 @@ class VectorService:
             pass
 
     def delete_collection(self, kb_id: str) -> bool:
-        """删除整个 ChromaDB 集合。
-
-        返回 True 表示存在且已删除；False 表示集合不存在。
-        ChromaDB 删除后，段目录可能仍有残留，下次启动时由 cleanup_pending 清理。
-        """
+        """删除整个 ChromaDB 集合。"""
         import shutil
         name = self._collection_name(kb_id)
         try:
             collection = self.client.get_collection(name)
         except Exception:
             return False
-
-        # 记录待清理的段目录
         try:
-            segments = collection.get()["ids"]
-            # 部分版本 ChromaDB 的段信息在 metadata 里
             pending_file = os.path.join(settings.chroma_persist_dir, "_pending_cleanup.txt")
             with open(pending_file, "a") as f:
                 for seg in os.listdir(settings.chroma_persist_dir):
@@ -248,7 +230,6 @@ class VectorService:
                         f.write(seg + "\n")
         except Exception:
             pass
-
         self.client.delete_collection(name)
         return True
 
