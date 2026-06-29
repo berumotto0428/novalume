@@ -321,7 +321,7 @@ def get_document_preview(
             raise HTTPException(500, f"文档转换失败: {e}")
 
         if result.returncode != 0:
-            raise HTTPException(500, f"文档转换失败: {result.stderr[:200]}")
+            raise HTTPException(500, f"文档转换失败: {result.stderr[:100]} | path={original_path} | out={output_dir}")
 
         # LibreOffice 输出文件名 = 磁盘文件名（doc_id）+.pdf，重命名为带 _preview 后缀
         stored_stem = os.path.splitext(os.path.basename(doc.file_path))[0]
