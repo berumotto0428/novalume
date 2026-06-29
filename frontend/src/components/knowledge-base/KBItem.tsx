@@ -53,7 +53,6 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
               if (isActive) {
                 onToggle()
               } else {
-                if (!isExpanded) onToggle()
                 navigate(`/kb/${kb.id}/docs`)
               }
             }}
@@ -92,7 +91,6 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
                   if (location.pathname === `/kb/${kb.id}/docs`) {
                     setDocsExpanded(!docsExpanded)
                   } else {
-                    if (!isExpanded) onToggle()
                     setDocsExpanded(true)
                     navigate(`/kb/${kb.id}/docs`)
                   }
@@ -119,7 +117,6 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
                       key={doc.id}
                       onClick={() => {
                         setCurrentKb(kb.id, kb.name);
-                        if (!isExpanded) onToggle()
                         navigate(`/kb/${kb.id}/docs/${doc.id}`)
                       }}
                       className={`w-full flex items-center gap-2 px-2 py-1 rounded-md text-xs transition-colors ${
@@ -140,7 +137,6 @@ export default function KBItem({ kb, isExpanded, onToggle, onRefreshKbs }: Props
           <button
             onClick={() => {
                 setCurrentKb(kb.id, kb.name);
-                if (!isExpanded) onToggle()
                 navigate(`/kb/${kb.id}/chat`)
               }}
             className={`w-full flex items-center gap-1 px-2 py-1.5 rounded-md text-sm transition-colors ${

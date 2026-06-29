@@ -16,7 +16,7 @@ const STORAGE_KEY = 'novalume_sidebar_width'
 
 export default function Sidebar() {
   const [kbs, setKbs] = useState<KnowledgeBase[]>([])
-  const [expandedKbId, setExpandedKbId] = useState<string | null>(null)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [showCreate, setShowCreate] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
@@ -44,10 +44,10 @@ export default function Sidebar() {
   // 加载 KB 列表（路由变化时刷新）
   useEffect(() => { loadKbs() }, [location.pathname])
 
-  // URL 变化时同步展开的知识库（刷新页面后仍保持状态）
+  // URL 变化时将当前知识库加入展开列表
   useEffect(() => {
     const m = location.pathname.match(/\/kb\/([^/]+)/)
-    if (m) setExpandedKbId(m[1])
+    if (m) setExpandedIds(prev => new Set(prev).add(m[1]))
   }, [location.pathname])
 
   // 持久化宽度
@@ -84,7 +84,12 @@ export default function Sidebar() {
   }
 
   const handleToggle = (kbId: string) => {
-    setExpandedKbId(expandedKbId === kbId ? null : kbId)
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(kbId)) next.delete(kbId)
+      else next.add(kbId)
+      return next
+    })
   }
 
   const handleLogout = () => {
@@ -124,7 +129,7 @@ export default function Sidebar() {
             <KBItem
               key={kb.id}
               kb={kb}
-              isExpanded={expandedKbId === kb.id}
+              isExpanded={expandedIds.has(kb.id)}
               onToggle={() => handleToggle(kb.id)}
               onRefreshKbs={loadKbs}
             />
