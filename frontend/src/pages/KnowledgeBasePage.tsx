@@ -62,7 +62,13 @@ export default function KnowledgeBasePage() {
     const hasInProgress = docs.some((d) => d.status === 'pending' || d.status === 'processing')
     if (hasInProgress && !intervalRef.current) {
       intervalRef.current = setInterval(() => {
-        docApi.list(kbId!).then((res) => setDocs(res.data)).catch(() => {})
+        docApi.list(kbId!).then((res) => {
+          setDocs(res.data)
+          // 所有文档处理完成后通知侧边栏刷新
+          if (!res.data.some((d: any) => d.status === 'pending' || d.status === 'processing')) {
+            useKBStore.getState().bumpVersion()
+          }
+        }).catch(() => {})
       }, 3000)
     } else if (!hasInProgress && intervalRef.current) {
       clearInterval(intervalRef.current); intervalRef.current = null
