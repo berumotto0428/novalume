@@ -22,6 +22,11 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [showClear, setShowClear] = useState(false)
+  const [inputText, setInputText] = useState(() => {
+    // 从 sessionStorage 恢复输入框内容（切换页面后不丢失）
+    if (kbId) return sessionStorage.getItem(`chat_draft_${kbId}`) || ''
+    return ''
+  })
   const abortRef = useRef<AbortController | null>(null)
 
   // 加载知识库信息
@@ -53,12 +58,13 @@ export default function ChatPage() {
     })
   }, [kbId])
 
-  // 组件卸载时自动中止流式请求，防止内存泄漏
+  // 输入框内容持久化（切换页面后恢复）
   useEffect(() => {
-    return () => {
-      abortRef.current?.abort()
+    if (kbId) {
+      if (inputText) sessionStorage.setItem(`chat_draft_${kbId}`, inputText)
+      else sessionStorage.removeItem(`chat_draft_${kbId}`)
     }
-  }, [])
+  }, [inputText, kbId])
 
   const handleSend = useCallback(async (question: string) => {
     if (!kbId) return
@@ -78,6 +84,7 @@ export default function ChatPage() {
 
     setMessages((prev) => [...prev, userMsg, assistantMsg])
     setIsStreaming(true)
+    setInputText('')
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -202,7 +209,7 @@ export default function ChatPage() {
       <ChatWindow messages={messages} isStreaming={isStreaming} kbId={kbId} />
 
       {/* Input */}
-      <ChatInput onSend={handleSend} onStop={handleStop} isStreaming={isStreaming} />
+      <ChatInput onSend={handleSend} onStop={handleStop} isStreaming={isStreaming} value={inputText} onChange={setInputText} />
 
       <AlertDialog open={showClear} onOpenChange={setShowClear}>
         <AlertDialogContent>

@@ -6,10 +6,15 @@ interface Props {
   onSend: (text: string) => void
   onStop: () => void
   isStreaming: boolean
+  value?: string
+  onChange?: (val: string) => void
 }
 
-export default function ChatInput({ onSend, onStop, isStreaming }: Props) {
-  const [text, setText] = useState('')
+export default function ChatInput({ onSend, onStop, isStreaming, value, onChange }: Props) {
+  const [localText, setLocalText] = useState('')
+  // 如果外部传入了 value，使用受控模式；否则用内部 state
+  const text = value !== undefined ? value : localText
+  const setText = onChange !== undefined ? onChange : setLocalText
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const adjustHeight = useCallback(() => {
