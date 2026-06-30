@@ -76,28 +76,34 @@ class VectorService:
         batch_size = 50
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
-            ok = False
-            for phase in range(2):  # 两阶段：快速重试 → 长等待后重试
-                for attempt in range(3):
-                    try:
-                        embeddings = self.embedding_fn(batch)
-                        collection.add(
-                            embeddings=embeddings,
-                            documents=batch,
-                            metadatas=metadatas[i:i + batch_size],
-                            ids=ids[i:i + batch_size],
-                        )
-                        ok = True
-                        break
-                    except Exception:
-                        if attempt < 2:
-                            time.sleep(3 * (attempt + 1))
-                if ok:
+            for attempt in range(3):
+                try:
+                    embeddings = self.embedding_fn(batch)
+                    collection.add(
+                        embeddings=embeddings,
+                        documents=batch,
+                        metadatas=metadatas[i:i + batch_size],
+                        ids=ids[i:i + batch_size],
+                    )
                     break
-                if phase == 0:
-                    time.sleep(60)  # 长等待后再次尝试（等限频窗口重置）
-            if not ok:
-                raise Exception(f"batch {i//batch_size+1} failed after 2 phases of retry")
+                except Exception:
+                    if attempt < 2:
+                        time.sleep(3 * (attempt + 1))
+                    else:
+                        # 整批失败：逐条重试，跳过有问题的
+                        for j, (doc, meta, eid) in enumerate(
+                            zip(batch, metadatas[i:i + batch_size], ids[i:i + batch_size])
+                        ):
+                            for t in range(2):
+                                try:
+                                    emb = self.embedding_fn([doc])
+                                    collection.add(embeddings=emb, documents=[doc], metadatas=[meta], ids=[eid])
+                                    break
+                                except Exception:
+                                    if t == 0:
+                                        time.sleep(3)
+                        logger = __import__('logging').getLogger(__name__)
+                        logger.warning(f"batch {i//batch_size+1} partially failed, skipped problematic chunks")
 
     def _embed_query(self, text: str) -> list[float]:
         """用 embedding_fn 将查询文本转为向量。"""
