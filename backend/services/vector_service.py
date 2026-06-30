@@ -76,7 +76,7 @@ class VectorService:
         batch_size = 50
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
-            for attempt in range(3):
+            for attempt in range(5):
                 try:
                     embeddings = self.embedding_fn(batch)
                     collection.add(
@@ -87,8 +87,8 @@ class VectorService:
                     )
                     break
                 except Exception as e:
-                    if attempt < 2:
-                        time.sleep(2 * (attempt + 1))
+                    if attempt < 4:
+                        time.sleep(5 * (attempt + 1))
                     else:
                         raise
 
