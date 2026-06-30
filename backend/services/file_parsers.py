@@ -118,7 +118,7 @@ def parse_pdf(file_path: str) -> tuple[str, int, list[str]]:
                         continue
         elif _get_vision_client():
             try:
-                mat = fitz.Matrix(2, 2)
+                mat = fitz.Matrix(1, 1)  # 1x zoom，2x 在 1000+ 页 PDF 上会导致 OOM
                 pix = page.get_pixmap(matrix=mat)
                 tasks.append((i, pix.tobytes("png"), "png", True))
             except (fitz.mupdf.FzErrorSystem, RuntimeError, MemoryError):
