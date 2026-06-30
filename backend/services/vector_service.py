@@ -68,7 +68,7 @@ class VectorService:
         local_client = self._get_local_client()
         collection = self.get_or_create_collection(kb_id, local_client)
         ef = self._make_ef()  # 每次新建 embedding function
-        batch_size = 50
+        batch_size = 10  # 10 条一批，避免请求过大触发 API 超时
 
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
