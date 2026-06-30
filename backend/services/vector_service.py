@@ -63,40 +63,50 @@ class VectorService:
             )
 
     def add_chunks(self, kb_id: str, chunks: list[str], metadatas: list[dict], ids: list[str]) -> None:
-        """批量添加文本片段到向量库。每次调用新建客户端，避免线程问题。"""
-        import time
+        """批量添加文本片段到向量库。"""
+        import time, logging
+        logger = logging.getLogger('vector_service')
         local_client = self._get_local_client()
         collection = self.get_or_create_collection(kb_id, local_client)
-        ef = self._make_ef()  # 每次新建 embedding function
-        batch_size = 10  # 10 条一批，避免请求过大触发 API 超时
+        ef = self._make_ef()
+        batch_size = 10
 
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
+            ok = False
             for attempt in range(3):
                 try:
                     embeddings = ef(batch)
                     collection.add(
-                        embeddings=embeddings,
-                        documents=batch,
+                        embeddings=embeddings, documents=batch,
                         metadatas=metadatas[i:i + batch_size],
                         ids=ids[i:i + batch_size],
                     )
+                    ok = True
                     break
-                except Exception:
+                except Exception as e:
+                    logger.error(f"BATCH {i//batch_size+1} attempt {attempt+1}: {e}")
                     if attempt < 2:
                         time.sleep(3 * (attempt + 1))
-                    else:
-                        for j, (doc, meta, eid) in enumerate(
-                            zip(batch, metadatas[i:i + batch_size], ids[i:i + batch_size])
-                        ):
-                            for t in range(2):
-                                try:
-                                    emb = ef([doc])
-                                    collection.add(embeddings=emb, documents=[doc], metadatas=[meta], ids=[eid])
-                                    break
-                                except Exception:
-                                    if t == 0:
-                                        time.sleep(3)
+
+            if not ok:
+                # 逐条写入，跳过有问题的
+                for j, (doc, meta, eid) in enumerate(
+                    zip(batch, metadatas[i:i + batch_size], ids[i:i + batch_size])
+                ):
+                    for t in range(2):
+                        try:
+                            emb = ef([doc])
+                            collection.add(embeddings=emb, documents=[doc], metadatas=[meta], ids=[eid])
+                            break
+                        except Exception as e:
+                            if t == 0:
+                                logger.warning(f"ITEM {i//batch_size+1}_{j}: {e}")
+                                time.sleep(3)
+                            else:
+                                logger.error(f"ITEM {i//batch_size+1}_{j} SKIPPED: {e}")
+            if not ok:
+                raise Exception(f"batch {i//batch_size+1} failed")
 
     def _make_ef(self):
         return OpenAIEmbeddingFunction(
