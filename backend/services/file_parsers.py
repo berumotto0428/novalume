@@ -110,10 +110,12 @@ def parse_pdf(file_path: str) -> tuple[str, int, list[str]]:
                     ext = "jpeg" if base["ext"] == "jpg" else base["ext"]
                     tasks.append((i, blob, ext, False))
         elif _get_vision_client():
-            # 扫描页：整页渲染为图片
-            mat = fitz.Matrix(2, 2)
-            pix = page.get_pixmap(matrix=mat)
-            tasks.append((i, pix.tobytes("png"), "png", True))
+            try:
+                mat = fitz.Matrix(2, 2)
+                pix = page.get_pixmap(matrix=mat)
+                tasks.append((i, pix.tobytes("png"), "png", True))
+            except (fitz.mupdf.FzErrorSystem, RuntimeError, MemoryError):
+                pass  # 内存不足时跳过该页的视觉处理
 
     doc.close()
 
