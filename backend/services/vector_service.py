@@ -2,7 +2,7 @@
 向量数据库服务，封装 ChromaDB 的增删查操作。
 
 不使用 ChromaDB 内建的嵌入函数（embedding-3 非标准模型会导致序列化错误），
-所有向量预计算后再写入。
+所有向量预计算后再写入。每次操作新建客户端，避免线程安全问题。
 """
 import os
 import warnings
@@ -13,7 +13,6 @@ from config import settings
 
 
 class VectorService:
-    """向量数据库服务单例，统一管理 ChromaDB 集合操作。"""
 
     def __init__(self):
         self.client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
@@ -21,7 +20,6 @@ class VectorService:
 
     @property
     def embedding_fn(self):
-        """返回 OpenAI 兼容的嵌入函数（智谱 embedding-3，2048 维）。"""
         if self._embedding_fn is None:
             self._embedding_fn = OpenAIEmbeddingFunction(
                 api_key=settings.embedding_api_key,
@@ -32,7 +30,6 @@ class VectorService:
 
     @staticmethod
     def cleanup_pending():
-        """清理上次终止时残留的 ChromaDB 段目录。"""
         pending_file = os.path.join(settings.chroma_persist_dir, "_pending_cleanup.txt")
         if not os.path.exists(pending_file):
             return
@@ -49,36 +46,35 @@ class VectorService:
     def _collection_name(self, kb_id: str) -> str:
         return f"kb_{kb_id.replace('-', '_')}"
 
-    def get_or_create_collection(self, kb_id: str):
-        """
-        获取或创建集合。集合本身不绑定嵌入函数（避免 embedding-3 序列化问题），
-        调用方需自行准备向量。
-        """
+    def _get_local_client(self):
+        """每次调用新建客户端，避免后台线程共享同一连接的问题。"""
+        return chromadb.PersistentClient(path=settings.chroma_persist_dir)
+
+    def get_or_create_collection(self, kb_id: str, client=None):
+        client = client or self.client
         name = self._collection_name(kb_id)
         try:
-            return self.client.get_collection(name)
+            return client.get_collection(name)
         except Exception:
-            return self.client.create_collection(
+            return client.create_collection(
                 name=name,
                 embedding_function=None,
                 metadata={"hnsw:space": "cosine"},
             )
 
     def add_chunks(self, kb_id: str, chunks: list[str], metadatas: list[dict], ids: list[str]) -> None:
-        """
-        批量添加文本片段到向量库。
-
-        用 self.embedding_fn 预计算向量后写入（集合本身不绑定嵌入函数，
-        避免 embedding-3 被 ChromaDB 错误序列化导致维度问题）。
-        """
+        """批量添加文本片段到向量库。每次调用新建客户端，避免线程问题。"""
         import time
-        collection = self.get_or_create_collection(kb_id)
+        local_client = self._get_local_client()
+        collection = self.get_or_create_collection(kb_id, local_client)
+        ef = self._make_ef()  # 每次新建 embedding function
         batch_size = 50
+
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
             for attempt in range(3):
                 try:
-                    embeddings = self.embedding_fn(batch)
+                    embeddings = ef(batch)
                     collection.add(
                         embeddings=embeddings,
                         documents=batch,
@@ -90,50 +86,46 @@ class VectorService:
                     if attempt < 2:
                         time.sleep(3 * (attempt + 1))
                     else:
-                        # 整批失败：逐条重试，跳过有问题的
                         for j, (doc, meta, eid) in enumerate(
                             zip(batch, metadatas[i:i + batch_size], ids[i:i + batch_size])
                         ):
                             for t in range(2):
                                 try:
-                                    emb = self.embedding_fn([doc])
+                                    emb = ef([doc])
                                     collection.add(embeddings=emb, documents=[doc], metadatas=[meta], ids=[eid])
                                     break
                                 except Exception:
                                     if t == 0:
                                         time.sleep(3)
-                        logger = __import__('logging').getLogger(__name__)
-                        logger.warning(f"batch {i//batch_size+1} partially failed, skipped problematic chunks")
+
+    def _make_ef(self):
+        return OpenAIEmbeddingFunction(
+            api_key=settings.embedding_api_key,
+            api_base=settings.embedding_base_url,
+            model_name=settings.embedding_model,
+        )
 
     def _embed_query(self, text: str) -> list[float]:
-        """用 embedding_fn 将查询文本转为向量。"""
-        return self.embedding_fn([text])[0]
+        return self._make_ef()([text])[0]
 
     def query(self, kb_id: str, query_text: str) -> list[dict]:
-        """
-        RRF 混合搜索主方法。
-
-        预计算查询向量后直接检索（避免 ChromaDB 嵌入函数维度问题）。
-        """
         import jieba
         import re
         from collections import Counter
 
-        collection = self.get_or_create_collection(kb_id)
+        local_client = self._get_local_client()
+        collection = self.get_or_create_collection(kb_id, local_client)
         fetch_count = min(settings.fetch_count, collection.count())
         if fetch_count == 0:
             return []
 
-        # 预计算查询向量
         query_embedding = self._embed_query(query_text)
-
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=fetch_count,
             include=["documents", "metadatas", "distances"],
         )
 
-        # Step 2: 阈值过滤
         candidates = []
         for doc, meta, dist in zip(
             results["documents"][0],
@@ -155,7 +147,6 @@ class VectorService:
         if not candidates:
             return []
 
-        # ── 加权 RRF 排序 ──
         candidates.sort(key=lambda x: x["distance"])
         for rank, c in enumerate(candidates, start=1):
             c["_dense_rank"] = rank
@@ -196,7 +187,6 @@ class VectorService:
         return selected
 
     def rename_document_chunks(self, kb_id: str, document_id: str, new_filename: str):
-        """在 ChromaDB 中更新指定文档所有 chunk 的 filename 元数据。"""
         try:
             collection = self.get_or_create_collection(kb_id)
             result = collection.get(
@@ -219,7 +209,6 @@ class VectorService:
             pass
 
     def delete_document_chunks(self, kb_id: str, document_id: str):
-        """删除 ChromaDB 中指定文档的所有 chunk。"""
         try:
             collection = self.get_or_create_collection(kb_id)
             collection.delete(where={"document_id": document_id})
@@ -227,7 +216,6 @@ class VectorService:
             pass
 
     def delete_collection(self, kb_id: str) -> bool:
-        """删除整个 ChromaDB 集合。"""
         import shutil
         name = self._collection_name(kb_id)
         try:
@@ -247,5 +235,4 @@ class VectorService:
         return True
 
 
-# 全局单例
 vector_service = VectorService()
