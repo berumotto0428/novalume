@@ -76,21 +76,28 @@ class VectorService:
         batch_size = 50
         for i in range(0, len(chunks), batch_size):
             batch = chunks[i:i + batch_size]
-            for attempt in range(5):
-                try:
-                    embeddings = self.embedding_fn(batch)
-                    collection.add(
-                        embeddings=embeddings,
-                        documents=batch,
-                        metadatas=metadatas[i:i + batch_size],
-                        ids=ids[i:i + batch_size],
-                    )
+            ok = False
+            for phase in range(2):  # 两阶段：快速重试 → 长等待后重试
+                for attempt in range(3):
+                    try:
+                        embeddings = self.embedding_fn(batch)
+                        collection.add(
+                            embeddings=embeddings,
+                            documents=batch,
+                            metadatas=metadatas[i:i + batch_size],
+                            ids=ids[i:i + batch_size],
+                        )
+                        ok = True
+                        break
+                    except Exception:
+                        if attempt < 2:
+                            time.sleep(3 * (attempt + 1))
+                if ok:
                     break
-                except Exception as e:
-                    if attempt < 4:
-                        time.sleep(5 * (attempt + 1))
-                    else:
-                        raise
+                if phase == 0:
+                    time.sleep(30)  # 长等待后再次尝试
+            if not ok:
+                raise Exception(f"batch {i//batch_size+1} failed after 2 phases of retry")
 
     def _embed_query(self, text: str) -> list[float]:
         """用 embedding_fn 将查询文本转为向量。"""
