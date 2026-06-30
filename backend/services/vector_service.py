@@ -95,7 +95,7 @@ class VectorService:
                 if ok:
                     break
                 if phase == 0:
-                    time.sleep(30)  # 长等待后再次尝试
+                    time.sleep(60)  # 长等待后再次尝试（等限频窗口重置）
             if not ok:
                 raise Exception(f"batch {i//batch_size+1} failed after 2 phases of retry")
 
