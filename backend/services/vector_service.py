@@ -64,8 +64,7 @@ class VectorService:
 
     def add_chunks(self, kb_id: str, chunks: list[str], metadatas: list[dict], ids: list[str]) -> None:
         """批量添加文本片段到向量库。"""
-        import time, logging
-        logger = logging.getLogger('vector_service')
+        import time
         local_client = self._get_local_client()
         collection = self.get_or_create_collection(kb_id, local_client)
         ef = self._make_ef()
@@ -85,7 +84,7 @@ class VectorService:
                     ok = True
                     break
                 except Exception as e:
-                    logger.error(f"BATCH {i//batch_size+1} attempt {attempt+1}: {e}")
+                    print(f"[VECTOR] BATCH {i//batch_size+1} attempt {attempt+1}: {e}")
                     if attempt < 2:
                         time.sleep(3 * (attempt + 1))
 
@@ -101,10 +100,10 @@ class VectorService:
                             break
                         except Exception as e:
                             if t == 0:
-                                logger.warning(f"ITEM {i//batch_size+1}_{j}: {e}")
+                                print(f"[VECTOR] ITEM {i//batch_size+1}_{j}: {e}")
                                 time.sleep(3)
                             else:
-                                logger.error(f"ITEM {i//batch_size+1}_{j} SKIPPED: {e}")
+                                print(f"[VECTOR] ITEM {i//batch_size+1}_{j} SKIPPED: {e}")
             if not ok:
                 raise Exception(f"batch {i//batch_size+1} failed")
 
