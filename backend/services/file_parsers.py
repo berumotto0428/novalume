@@ -95,20 +95,27 @@ def parse_pdf(file_path: str) -> tuple[str, int, list[str]]:
     tasks = []  # (page_index, img_bytes, ext)
 
     for i, page in enumerate(doc):
-        text = page.get_text("text").strip()
+        try:
+            text = page.get_text("text").strip()
+        except Exception:
+            text = ""
         is_scan = len(text) < 30
 
         # 普通页：收集文字和嵌入图片
         if not is_scan:
-            page_parts[i].append(text)
+            if text:
+                page_parts[i].append(text)
             if _get_vision_client():
                 for info in page.get_images(full=True):
-                    base = doc.extract_image(info[0])
-                    blob = base["image"]
-                    if len(blob) < 5000:
+                    try:
+                        base = doc.extract_image(info[0])
+                        blob = base["image"]
+                        if len(blob) < 5000:
+                            continue
+                        ext = "jpeg" if base["ext"] == "jpg" else base["ext"]
+                        tasks.append((i, blob, ext, False))
+                    except Exception:
                         continue
-                    ext = "jpeg" if base["ext"] == "jpg" else base["ext"]
-                    tasks.append((i, blob, ext, False))
         elif _get_vision_client():
             try:
                 mat = fitz.Matrix(2, 2)
