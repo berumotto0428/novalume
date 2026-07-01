@@ -334,10 +334,19 @@ class VectorService:
             if not is_dup:
                 deduped.append(r)
 
-        # ── 分数映射到 0-100 ──
-        max_rrf = 1 / (settings.rrf_k + 1)
+        # ── 评分与排序 ──
+        # RRF 只负责"选谁"（top-N + 阈值 + 去重），
+        # 最终排序和百分比用原始值计算（余弦相似度 + BM25），不涉及排名转换，
+        # 避免排名相近的不相关 chunk 获得虚高分数。
+        w = settings.keyword_weight
+        max_bm25 = max(r["_sparse_score"] for r in deduped) or 1
         for r in deduped:
-            r["score"] = round(r["_rrf"] / max_rrf * 100)
+            sim = 1 - r["distance"]                     # 语义绝对相关度
+            kw = r["_sparse_score"] / max_bm25           # 关键词绝对相关度（归一化）
+            r["score"] = round((sim * (1 - w) + kw * w) * 100)
+
+        # 按分数降序排列，与显示的百分比一致
+        deduped.sort(key=lambda x: -x["score"])
 
         return deduped
 
