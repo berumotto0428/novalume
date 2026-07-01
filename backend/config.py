@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     embedding_model: str = "embedding-3"  
 
     # ── 视觉模型（通义千问 Qwen-VL-Flash）──
-    vision_api_key: str 
+    vision_api_key: str = ""
     vision_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     vision_model: str = "qwen3.6-plus"
 
