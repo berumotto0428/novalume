@@ -1,10 +1,13 @@
+import re
+import json
+import logging
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from openai import AsyncOpenAI
-from datetime import datetime
-import json
 
 from database import get_db, SessionLocal
 from models.user import User
@@ -15,7 +18,70 @@ from routers.auth import get_current_user
 from config import settings
 from services.vector_service import vector_service
 
-router = APIRouter()
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/knowledge-bases", tags=["chat"])
+
+# ── LLM 客户端单例（AsyncOpenAI 内部 httpx 连接池可安全并发）──
+_llm_client: AsyncOpenAI | None = None
+
+def _get_llm_client() -> AsyncOpenAI:
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = AsyncOpenAI(
+            api_key=settings.llm_api_key,
+            base_url=settings.llm_base_url,
+        )
+    return _llm_client
+
+# ── 代词模式：检测问题是否包含指代前文的人称/指示代词 ──
+_PRONOUN_RE = re.compile(r'(它|他|她|它们|他们|她们|这|那|该|此|其'
+                         r'|这个|那个|这些|那些|上述|以上|前者|后者'
+                         r'|上文|如下|下列|以下|下列)')
+
+# ── 查询改写 ──
+
+def _needs_rewrite(question: str) -> bool:
+    """检测问题是否包含代词，需要结合对话历史才能理解。"""
+    return bool(_PRONOUN_RE.search(question))
+
+
+async def _rewrite_query(
+    history: list[dict],
+    question: str,
+    client: AsyncOpenAI,
+) -> str:
+    """调用 LLM 将含代词的问题改写为包含完整上下文的独立问题。"""
+    # 取最近 2 轮对话作为上下文
+    recent = history[-4:] if len(history) >= 4 else history
+
+    try:
+        resp = await client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是一个查询改写助手。根据对话历史，把用户的最新问题改写成"
+                        "一个包含完整上下文的独立问题。"
+                        "要求：\n"
+                        "1. 将代词替换为具体名词\n"
+                        "2. 补全省略的上下文\n"
+                        "3. 保留原问题的所有信息\n"
+                        "4. 只输出改写后的问题，不要任何额外内容"
+                    ),
+                },
+                *recent,
+                {"role": "user", "content": f"改写成独立问题：{question}"},
+            ],
+            temperature=0,
+            max_tokens=128,
+        )
+        rewritten = resp.choices[0].message.content.strip()
+        if rewritten:
+            return rewritten
+    except Exception:
+        pass
+    return question  # 改写失败则用原文
 
 
 class ChatRequest(BaseModel):
@@ -41,7 +107,7 @@ def _get_or_create_conversation(kb_id: str, user_id: str, db: Session) -> Conver
     return conv
 
 
-@router.post("/knowledge-bases/{kb_id}/chat")
+@router.post("/{kb_id}/chat")
 async def chat(
     kb_id: str,
     request: ChatRequest,
@@ -71,7 +137,18 @@ async def chat(
                 save_conv.updated_at = datetime.utcnow()
                 save_db.commit()
 
-        retrieved = vector_service.query(kb_id, request.question)
+        # 获取 LLM 客户端（模块级单例，复用 httpx 连接池）
+        client = _get_llm_client()
+
+        # 多轮对话查询改写：将代词替换为实体词
+        query_text = request.question
+        if history_messages and _needs_rewrite(query_text):
+            rewritten = await _rewrite_query(history_messages, query_text, client)
+            if rewritten != query_text:
+                logger.info("query rewrite: %r → %r", query_text, rewritten)
+                query_text = rewritten
+
+        retrieved = vector_service.query(kb_id, query_text)
 
         sources = [
             {
@@ -117,11 +194,6 @@ async def chat(
                 messages_llm.append({"role": msg.role, "content": msg.content})
             messages_llm.append({"role": "user", "content": request.question})
 
-            client = AsyncOpenAI(
-                api_key=settings.llm_api_key,
-                base_url=settings.llm_base_url,
-            )
-
             stream = await client.chat.completions.create(
                 model=settings.llm_model,
                 messages=messages_llm,
@@ -163,7 +235,7 @@ async def chat(
     )
 
 
-@router.get("/knowledge-bases/{kb_id}/messages")
+@router.get("/{kb_id}/messages")
 def get_kb_messages(
     kb_id: str,
     current_user: User = Depends(get_current_user),
@@ -207,7 +279,7 @@ def get_kb_messages(
     return result
 
 
-@router.delete("/knowledge-bases/{kb_id}/messages")
+@router.delete("/{kb_id}/messages")
 def clear_kb_messages(
     kb_id: str,
     current_user: User = Depends(get_current_user),

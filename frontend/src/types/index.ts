@@ -86,6 +86,7 @@ export interface AdminUserDetail extends AdminUserListItem {
     documents: Array<{
       id: string
       filename: string
+      file_type: string | null
       file_size: number
       page_count: number | null
       status: string

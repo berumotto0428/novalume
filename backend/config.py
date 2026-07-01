@@ -32,11 +32,11 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 50
     chunk_size: int = 1000              # 文本分块大小（字符数）
     chunk_overlap: int = 200           # 相邻块重叠字符数
-    top_k_max_distance: float = 0.65   # 余弦距离阈值，超过此值过滤
     rrf_k: int = 40                    # RRF 常数（分母中的 K，越大排名差异对分数的影响越小）
     keyword_weight: float = 0.4        # 关键词排名权重（0~1，0.5=等权重，0=纯语义，1=纯关键词）
-    fetch_count: int = 30              # 从向量库取多少个候选（阈值过滤后会进一步缩减）
-    max_chunks: int = 15               # 最终返回的最大片段数（按相关度动态取，不超过此值）
+    fetch_count: int = 30              # 从向量库取多少个候选
+    max_chunks: int = 15               # 最终传给 LLM 的最大片段数
+    min_score_ratio: float = 0.5       # RRF 相对阈值：chunk 分数至少达到最佳 chunk 的百分比才保留（0=关闭，1=仅保留满分）
 
     # ── 视觉模型（通义千问 Qwen-VL-Flash）──
     vision_api_key: str = ""

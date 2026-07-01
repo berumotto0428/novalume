@@ -10,8 +10,12 @@
 """
 import os
 
+from sqlalchemy import func
+
 from database import SessionLocal
 from config import settings
+from models.document import Document
+from models.knowledge_base import KnowledgeBase
 from services.file_parsers import parse_file
 from services.chunking import chunk_by_file_type
 from services.vector_service import vector_service
@@ -43,12 +47,12 @@ def process_document(document_id: str):
     db = SessionLocal()
     doc = None
     try:
-        doc = db.get(Document, document_id)
+        doc = db.query(Document).filter(Document.id == document_id).first()
         if not doc:
             return
 
         # 安全校验：知识库是否仍然存在
-        kb = db.get(KnowledgeBase, doc.knowledge_base_id)
+        kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == doc.knowledge_base_id).first()
         if not kb:
             db.delete(doc)
             db.commit()

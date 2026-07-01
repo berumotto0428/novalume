@@ -5,11 +5,21 @@
 所有向量预计算后再写入。每次操作新建客户端，避免线程安全问题。
 """
 import os
+import math
+import logging
 import warnings
+from collections import Counter
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import jieba
+import re
+import time
 import chromadb
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class VectorService:
@@ -63,49 +73,82 @@ class VectorService:
             )
 
     def add_chunks(self, kb_id: str, chunks: list[str], metadatas: list[dict], ids: list[str]) -> None:
-        """批量添加文本片段到向量库。"""
-        import time
+        """
+        批量添加文本片段到向量库。
+
+        性能优化：嵌入 API 调用并行化（最多 5 个线程同时调用智谱 API），
+        ChromaDB 写入仍保持串行以避免线程安全问题。
+        """
         local_client = self._get_local_client()
         collection = self.get_or_create_collection(kb_id, local_client)
-        ef = self._make_ef()
         batch_size = 10
 
+        # 分批
+        batches = []
         for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i + batch_size]
-            ok = False
+            batches.append({
+                "chunks": chunks[i:i + batch_size],
+                "metadatas": metadatas[i:i + batch_size],
+                "ids": ids[i:i + batch_size],
+                "idx": i // batch_size,
+            })
+
+        # 并行嵌入：每批独立调用 API（每个线程建自己的 client，httpx 非线程安全）
+        def _embed(batch: dict) -> tuple[int, list[list[float]] | None]:
+            local_ef = self._make_ef()
             for attempt in range(3):
                 try:
-                    embeddings = ef(batch)
-                    collection.add(
-                        embeddings=embeddings, documents=batch,
-                        metadatas=metadatas[i:i + batch_size],
-                        ids=ids[i:i + batch_size],
-                    )
-                    ok = True
-                    break
+                    emb = local_ef(batch["chunks"])
+                    return batch["idx"], emb
                 except Exception as e:
-                    print(f"[VECTOR] BATCH {i//batch_size+1} attempt {attempt+1}: {e}")
+                    logger.warning("BATCH %s attempt %s: %s", batch['idx']+1, attempt+1, e)
                     if attempt < 2:
                         time.sleep(3 * (attempt + 1))
+            return batch["idx"], None
 
-            if not ok:
-                # 逐条写入，跳过有问题的
-                for j, (doc, meta, eid) in enumerate(
-                    zip(batch, metadatas[i:i + batch_size], ids[i:i + batch_size])
-                ):
-                    for t in range(2):
-                        try:
-                            emb = ef([doc])
-                            collection.add(embeddings=emb, documents=[doc], metadatas=[meta], ids=[eid])
-                            break
-                        except Exception as e:
-                            if t == 0:
-                                print(f"[VECTOR] ITEM {i//batch_size+1}_{j}: {e}")
-                                time.sleep(3)
-                            else:
-                                print(f"[VECTOR] ITEM {i//batch_size+1}_{j} SKIPPED: {e}")
-            if not ok:
-                raise Exception(f"batch {i//batch_size+1} failed")
+        embedded = [None] * len(batches)
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            fut_map = {pool.submit(_embed, b): b["idx"] for b in batches}
+            for fut in as_completed(fut_map):
+                idx, embs = fut.result()
+                embedded[idx] = embs
+
+        # 串行写入：嵌入完成后顺序写 ChromaDB
+        for i, batch in enumerate(batches):
+            embs = embedded[i]
+            if embs is not None:
+                try:
+                    collection.add(
+                        embeddings=embs, documents=batch["chunks"],
+                        metadatas=batch["metadatas"], ids=batch["ids"],
+                    )
+                    continue
+                except Exception as e:
+                    logger.warning("WRITE batch %s: %s", i+1, e)
+
+            # 批量写入失败 → 逐条写入（跳过有问题的单条）
+            all_ok = True
+            for j, (doc, meta, eid) in enumerate(
+                zip(batch["chunks"], batch["metadatas"], batch["ids"])
+            ):
+                item_ok = False
+                for t in range(2):
+                    try:
+                        ef = self._make_ef()
+                        emb = ef([doc])
+                        collection.add(embeddings=emb, documents=[doc], metadatas=[meta], ids=[eid])
+                        item_ok = True
+                        break
+                    except Exception as e:
+                        if t == 0:
+                            logger.warning("ITEM %s_%s: %s", i+1, j, e)
+                            time.sleep(3)
+                        else:
+                            logger.warning("ITEM %s_%s SKIPPED: %s", i+1, j, e)
+                if not item_ok:
+                    all_ok = False
+            if not all_ok:
+                raise Exception(f"batch {i+1} failed")
 
     def _make_ef(self):
         return OpenAIEmbeddingFunction(
@@ -117,17 +160,103 @@ class VectorService:
     def _embed_query(self, text: str) -> list[float]:
         return self._make_ef()([text])[0]
 
-    def query(self, kb_id: str, query_text: str) -> list[dict]:
-        import jieba
-        import re
+    # ────────────────────────────────────────────
+    # BM25 关键词打分（基于 30 个候选片段的统计）
+    # ────────────────────────────────────────────
+
+    @staticmethod
+    def _tokenize(text: str) -> list[str]:
+        """分词并过滤停用词级别的噪音。"""
+        return [
+            w for w in jieba.lcut(text)
+            if len(w) > 1 and not re.match(r'^\d+$', w)
+        ]
+
+    @staticmethod
+    def _bm25_scores(
+        query_words: list[str],
+        candidates_texts: list[str],
+    ) -> list[float]:
+        """
+        对候选列表计算 BM25 关键词分数。
+
+        参数：
+          query_words — 查询的分词结果（已过滤）
+          candidates_texts — 每个候选的原文
+
+        返回：
+          每个候选的 BM25 分数（浮点数列表，与 candidates_texts 同序）
+        """
         from collections import Counter
 
+        N = len(candidates_texts)
+        if N == 0 or not query_words:
+            return [0.0] * N
+
+        # 切词 + 统计文档频率
+        doc_freq = Counter()   # 每个词出现在几个文档中
+        doc_words_list = []
+        doc_lengths = []
+
+        for text in candidates_texts:
+            words = VectorService._tokenize(text)
+            doc_words_list.append(words)
+            doc_lengths.append(len(words))
+            doc_freq.update(set(words))
+
+        avg_doc_len = sum(doc_lengths) / N
+        k1, b = 1.5, 0.75
+
+        scores = []
+        for i in range(N):
+            words = doc_words_list[i]
+            doc_len = doc_lengths[i]
+            if doc_len == 0:
+                scores.append(0.0)
+                continue
+
+            word_counter = Counter(words)
+            score = 0.0
+            for q_word in query_words:
+                tf = word_counter.get(q_word, 0)
+                if tf == 0:
+                    continue
+                # BM25 IDF（平滑版）
+                df = doc_freq.get(q_word, 0)
+                idf = math.log((N - df + 0.5) / max(df + 0.5, 1) + 1)
+                # BM25 TF
+                tf_norm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (doc_len / avg_doc_len)))
+                score += idf * tf_norm
+
+            scores.append(score)
+
+        return scores
+
+    # ────────────────────────────────────────────
+    # 检索主流程
+    # ────────────────────────────────────────────
+
+    def query(self, kb_id: str, query_text: str) -> list[dict]:
+        """
+        检索 + 混合排名 + 去重。
+
+        完整流程：
+          1. ChromaDB 向量检索 → 取 FETCH_COUNT 个候选
+          2. BM25 关键词打分（对所有候选，不提前过滤）
+          3. 稠密排名（按余弦距离）
+          4. 稀疏排名（按 BM25 分数）
+          5. RRF 融合 + 降序排列
+          6. 取 Top MAX_CHUNKS
+          7. RRF 相对阈值过滤（低于峰值 × min_score_ratio 的丢弃）
+          8. 去重：同一文档的相邻 chunk 只留一个
+        """
         local_client = self._get_local_client()
         collection = self.get_or_create_collection(kb_id, local_client)
         fetch_count = min(settings.fetch_count, collection.count())
         if fetch_count == 0:
             return []
 
+        # ── 1. 向量检索 ──
         query_embedding = self._embed_query(query_text)
         results = collection.query(
             query_embeddings=[query_embedding],
@@ -141,8 +270,6 @@ class VectorService:
             results["metadatas"][0],
             results["distances"][0],
         ):
-            if dist > settings.top_k_max_distance:
-                continue
             candidates.append({
                 "text": doc,
                 "filename": meta.get("filename", ""),
@@ -156,44 +283,63 @@ class VectorService:
         if not candidates:
             return []
 
+        # ── 2. BM25 关键词打分（对所有候选，不提前过滤）──
+        query_words = self._tokenize(query_text)
+        bm25_scores = self._bm25_scores(query_words, [c["text"] for c in candidates])
+        for c, score in zip(candidates, bm25_scores):
+            c["_sparse_score"] = score
+
+        # ── 3. 稠密排名（按距离从小到大排）──
         candidates.sort(key=lambda x: x["distance"])
         for rank, c in enumerate(candidates, start=1):
             c["_dense_rank"] = rank
 
-        query_words = [
-            w for w in jieba.lcut(query_text)
-            if len(w) > 1 and not re.match(r'^\d+$', w)
-        ]
-        if query_words:
-            query_set = set(query_words)
-            for c in candidates:
-                doc_words = set(
-                    w for w in jieba.lcut(c["text"])
-                    if len(w) > 1 and not re.match(r'^\d+$', w)
-                )
-                hits = len(query_set & doc_words)
-                c["_sparse_score"] = hits / max(len(query_set), 1)
-            candidates.sort(key=lambda x: -x["_sparse_score"])
-            for rank, c in enumerate(candidates, start=1):
-                c["_sparse_rank"] = rank
-        else:
-            for c in candidates:
-                c["_sparse_score"] = 0
-                c["_sparse_rank"] = len(candidates)
+        # ── 4. 稀疏排名（按 BM25 分数从高到低排）──
+        candidates.sort(key=lambda x: -x["_sparse_score"])
+        for rank, c in enumerate(candidates, start=1):
+            c["_sparse_rank"] = rank
 
+        # ── 5. RRF 融合两个排名 ──
         w = settings.keyword_weight
         K = settings.rrf_k
         for c in candidates:
             c["_rrf"] = (1 - w) / (K + c["_dense_rank"]) + w / (K + c["_sparse_rank"])
 
         candidates.sort(key=lambda x: -x["_rrf"])
+
+        # ── 6. 取 Top ──
         selected = candidates[:settings.max_chunks]
 
-        max_rrf = 1 / (settings.rrf_k + 1)
+        # ── 7. RRF 相对阈值过滤：从候选里剔除质量低于峰值的 ──
+        # 先按 MAX_CHUNKS 限制数量，再从这 N 个里排除分数低于峰值一定比例的。
+        # 峰值始终是 candidates[0]，因为步骤 5 已按 RRF 降序排列。
+        ratio = settings.min_score_ratio
+        if ratio > 0 and selected:
+            threshold = selected[0]["_rrf"] * ratio
+            selected = [c for c in selected if c["_rrf"] >= threshold]
+
+        if not selected:
+            return []
+
+        # ── 8. 去重：同一文档的相邻 chunk 只保留分数高的那个 ──
+        deduped = []
         for r in selected:
+            is_dup = False
+            for existing in deduped:
+                same_doc = r["document_id"] == existing["document_id"]
+                adjacent = abs(r["chunk_index"] - existing["chunk_index"]) <= 1
+                if same_doc and adjacent:
+                    is_dup = True
+                    break
+            if not is_dup:
+                deduped.append(r)
+
+        # ── 分数映射到 0-100 ──
+        max_rrf = 1 / (settings.rrf_k + 1)
+        for r in deduped:
             r["score"] = round(r["_rrf"] / max_rrf * 100)
 
-        return selected
+        return deduped
 
     def rename_document_chunks(self, kb_id: str, document_id: str, new_filename: str):
         try:

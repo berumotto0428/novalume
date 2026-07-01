@@ -12,7 +12,7 @@ langchain-text-splitters>=0.2.0
 pymupdf>=1.24.0
 aiofiles>=23.2.1
 python-dotenv>=1.0.0
-bcrypt==4.0.1
+bcrypt>=4.0.1,<4.1.0
 pypinyin>=0.55.0
 jieba>=0.42.1
 python-docx>=1.1.0

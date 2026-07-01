@@ -11,6 +11,9 @@ PPT(.pptx)、图片(.jpg/.jpeg/.png)
   - PPT slide 有图片 shape 且图片大于 5KB
   - 文件本身是图片格式（jpg/png）
 未配置 vision_api_key 时自动跳过，不影响文字内容的提取。
+
+线程安全说明：_describe_image 每次调用创建独立的 OpenAI 客户端，
+不会被 ThreadPoolExecutor 中的多线程竞争问题影响。
 """
 import os
 import base64
@@ -19,32 +22,20 @@ from openai import OpenAI
 from config import settings
 
 
-_vision_client: OpenAI | None = None
-
-
-def _get_vision_client() -> OpenAI | None:
-    """返回视觉模型客户端，未配置 vision_api_key 时返回 None"""
-    global _vision_client
-    if not settings.vision_api_key:
-        return None
-    if _vision_client is None:
-        _vision_client = OpenAI(
-            api_key=settings.vision_api_key,
-            base_url=settings.vision_base_url,
-        )
-    return _vision_client
-
-
 def _describe_image(img_bytes: bytes, img_ext: str = "png") -> str:
     """
     调用 Qwen-VL-Flash 描述图片内容。
+    每次调用创建独立客户端（httpx 非线程安全，不能在多线程中共享）。
     失败时返回空字符串，不抛出异常（保证主流程不中断）。
     """
-    client = _get_vision_client()
-    if not client:
+    if not settings.vision_api_key:
         return ""
     try:
         b64 = base64.b64encode(img_bytes).decode()
+        client = OpenAI(
+            api_key=settings.vision_api_key,
+            base_url=settings.vision_base_url,
+        )
         resp = client.chat.completions.create(
             model=settings.vision_model,
             timeout=15,
@@ -105,18 +96,21 @@ def parse_pdf(file_path: str) -> tuple[str, int, list[str]]:
         if not is_scan:
             if text:
                 page_parts[i].append(text)
-            if _get_vision_client():
-                for info in page.get_images(full=True):
-                    try:
-                        base = doc.extract_image(info[0])
-                        blob = base["image"]
-                        if len(blob) < 5000:
+            if settings.vision_api_key:
+                try:
+                    for info in page.get_images(full=True):
+                        try:
+                            base = doc.extract_image(info[0])
+                            blob = base["image"]
+                            if len(blob) < 5000:
+                                continue
+                            ext = "jpeg" if base["ext"] == "jpg" else base["ext"]
+                            tasks.append((i, blob, ext, False))
+                        except Exception:
                             continue
-                        ext = "jpeg" if base["ext"] == "jpg" else base["ext"]
-                        tasks.append((i, blob, ext, False))
-                    except Exception:
-                        continue
-        elif _get_vision_client():
+                except Exception:
+                    pass  # get_images 失败（如文档损坏）时跳过该页的所有图片提取
+        elif settings.vision_api_key:
             try:
                 mat = fitz.Matrix(1, 1)  # 1x zoom，2x 在 1000+ 页 PDF 上会导致 OOM
                 pix = page.get_pixmap(matrix=mat)
@@ -127,7 +121,7 @@ def parse_pdf(file_path: str) -> tuple[str, int, list[str]]:
     doc.close()
 
     # 并行调用视觉模型
-    if tasks and _get_vision_client():
+    if tasks and settings.vision_api_key:
         with ThreadPoolExecutor(max_workers=5) as pool:
             fut_map = {pool.submit(_describe_image, blob, ext): (idx, is_scan)
                        for idx, blob, ext, is_scan in tasks}

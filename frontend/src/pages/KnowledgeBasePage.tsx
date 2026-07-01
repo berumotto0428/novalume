@@ -47,11 +47,14 @@ export default function KnowledgeBasePage() {
   // 加载 KB + 文档列表
   const loadData = useCallback(() => {
     if (!kbId) return
+    let loaded = false
     kbApi.get(kbId).then((res) => {
       setKb(res.data)
       setCurrentKb(res.data.id, res.data.name)
-    }).catch(() => {})
-    docApi.list(kbId).then((res) => setDocs(res.data)).catch(() => {})
+      loaded = true
+    }).catch(() => toast.error('加载知识库失败'))
+      .finally(() => { if (loaded) setLoading(false) })
+    docApi.list(kbId).then((res) => setDocs(res.data)).catch(() => toast.error('加载文档列表失败'))
       .finally(() => setLoading(false))
   }, [kbId])
 

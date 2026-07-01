@@ -51,9 +51,30 @@ def verify_kb_access(kb_id: str, current_user: User, db: Session) -> KnowledgeBa
     return kb
 
 
+DOC_PROCESS_TIMEOUT = 300  # 单文档处理最大秒数
+
+
 async def _run_process(doc_id: str):
-    """在独立线程中执行文档处理，不阻塞事件循环"""
-    await asyncio.get_running_loop().run_in_executor(None, process_document, doc_id)
+    """在独立线程中执行文档处理，带超时保护，不阻塞事件循环。"""
+    loop = asyncio.get_running_loop()
+    future = loop.run_in_executor(None, process_document, doc_id)
+    try:
+        await asyncio.wait_for(future, timeout=DOC_PROCESS_TIMEOUT)
+    except asyncio.TimeoutError:
+        # 超时：标记文档为失败（process_document 的线程可能仍在跑，
+        # 但 DB 状态已锁死为 failed，后续写入会被 process_document 的事务覆盖，
+        # 不过现实中 300 秒还处理不完的文档基本是卡死了，不会再有后续）
+        from database import SessionLocal
+        from models.document import Document
+        db = SessionLocal()
+        try:
+            doc = db.get(Document, doc_id)
+            if doc and doc.status == "processing":
+                doc.status = "failed"
+                doc.error_message = f"文档处理超时（>{DOC_PROCESS_TIMEOUT}秒）"
+                db.commit()
+        finally:
+            db.close()
 
 
 @router.post("/knowledge-bases/{kb_id}/documents", response_model=list[DocumentResponse], status_code=201)

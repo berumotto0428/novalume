@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Layers, FileText, ChevronDown, ChevronRight } from 'lucide-react'
+import DocIcon from '@/components/document/DocIcon'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
@@ -148,7 +149,7 @@ export default function AdminUserDetailPage() {
                               className="flex items-center justify-between py-1.5 px-3 text-sm rounded hover:bg-gray-50"
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <FileText className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                <DocIcon fileType={doc.file_type} className="h-3.5 w-3.5" />
                                 <span className="truncate">{doc.filename}</span>
                               </div>
                               <div className="flex items-center gap-3 shrink-0 text-xs text-gray-400 ml-3">

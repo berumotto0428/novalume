@@ -10,4 +10,5 @@ export const kbApi = {
     apiClient.put<KnowledgeBase>(`/knowledge-bases/${id}`, data),
   delete: (id: string) => apiClient.delete(`/knowledge-bases/${id}`),
   getMessages: (id: string) => apiClient.get<Message[]>(`/knowledge-bases/${id}/messages`),
+  clearMessages: (id: string) => apiClient.delete(`/knowledge-bases/${id}/messages`),
 }

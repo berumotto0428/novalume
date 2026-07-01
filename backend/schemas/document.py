@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class DocumentRename(BaseModel):
@@ -13,9 +13,9 @@ class DocumentResponse(BaseModel):
     knowledge_base_id: str
     filename: str
     file_size: int
-    page_count: Optional[int]
-    file_type: Optional[str] = None  # ← 新增
+    page_count: int | None
+    file_type: str | None = None
     status: str
     chunk_count: int
-    error_message: Optional[str]
+    error_message: str | None
     created_at: datetime

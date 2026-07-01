@@ -7,7 +7,6 @@
   - PPT：每页一个 chunk，超长页才二次切割
   - 图片：整体一个 chunk
 """
-import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
@@ -98,22 +97,11 @@ def chunk_by_file_type(
                 chunks.extend(prefix + c for c in sub_chunks)
         return chunks
 
-    # PDF / Word / Markdown：字符数切块，保护图片描述块不被切断
-    IMAGE_BLOCK_RE = re.compile(r'(\[(?:图片内容|扫描页内容)\][^\[]*)', re.DOTALL)
+    # PDF / Word / Markdown：统一用 RecursiveCharacterTextSplitter 切割
+    # 注意：不依赖正则识别图片块边界。视觉模型的描述输出控制在 max_tokens=1000
+    # 以内（约 500-700 中文字符），天然小于 chunk_size，不会被切断。
+    # 如果描述恰好跨越 chunk 边界，重叠的 200 字符会保留上下文。
     splitter = _make_splitter(chunk_size, chunk_overlap)
-    chunks = []
     full_text = "\n\n".join(page_texts)
-    # 先按图片块边界分段
-    segments = IMAGE_BLOCK_RE.split(full_text)
-    for seg in segments:
-        seg = seg.strip()
-        if not seg:
-            continue
-        if seg.startswith("[图片内容]") or seg.startswith("[扫描页内容]"):
-            # 图片描述块：整块保留，不切割
-            chunks.append(seg)
-        else:
-            # 普通文字：按字符数切割
-            sub = splitter.split_text(seg)
-            chunks.extend(sub)
+    chunks = splitter.split_text(full_text)
     return [c for c in chunks if c.strip()]

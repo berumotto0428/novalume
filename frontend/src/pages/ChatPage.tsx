@@ -148,11 +148,7 @@ export default function ChatPage() {
   const handleClear = useCallback(async () => {
     if (!kbId) return
     try {
-      const res = await fetch(`/api/knowledge-bases/${kbId}/messages`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` },
-      })
-      if (!res.ok) throw new Error()
+      await kbApi.clearMessages(kbId)
       setMessages([])
       toast.success('对话记录已清除')
     } catch {

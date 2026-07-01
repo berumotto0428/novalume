@@ -9,9 +9,12 @@ FastAPI 应用入口。
 
 启动方式：uvicorn main:app --reload --port 8000
 """
+import os
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from database import engine, SessionLocal
@@ -19,7 +22,13 @@ from models import Base
 from routers import auth, knowledge_bases, documents, chat, admin
 from config import settings
 from services.vector_service import vector_service
-import os
+
+# ── 日志配置（整个应用的日志输出入口）──
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 
 @asynccontextmanager
@@ -61,7 +70,8 @@ async def lifespan(app: FastAPI):
                 try:
                     db.execute(text(sql))
                     db.execute(
-                        text(f"INSERT INTO _migrations (name, applied_at) VALUES ('{name}', datetime('now'))")
+                        text("INSERT INTO _migrations (name, applied_at) VALUES (:name, datetime('now'))"),
+                        {"name": name},
                     )
                     db.commit()
                 except Exception:

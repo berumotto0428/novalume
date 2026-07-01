@@ -48,13 +48,8 @@ def list_users(
             User.username.ilike(f"%{search}%") | User.email.ilike(f"%{search}%")
         )
     total = query.count()
-    # 管理员优先 → 按用户名拼音排序
-    all_users = query.order_by(User.is_admin.desc()).all()
-    all_users.sort(key=lambda u: (''.join(lazy_pinyin(u.username)).lower()))
-
-    # 分页
     start = (page - 1) * page_size
-    users = all_users[start:start + page_size]
+    users = query.order_by(User.created_at.desc()).offset(start).limit(page_size).all()
 
     def fmt_dt(dt) -> str | None:
         """序列化时间，标记 UTC"""
@@ -115,6 +110,7 @@ def get_user_detail(
                     {
                         "id": doc.id,
                         "filename": doc.filename,
+                        "file_type": doc.file_type,
                         "file_size": doc.file_size,
                         "page_count": doc.page_count,
                         "status": doc.status,
