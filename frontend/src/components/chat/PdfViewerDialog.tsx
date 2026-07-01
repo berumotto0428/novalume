@@ -25,10 +25,18 @@ export default function PdfViewerDialog({ source, kbId, open, onOpenChange }: Pr
   const [error, setError] = useState('')
   const [renderRange, setRenderRange] = useState({ start: 1, end: 1 })
   const [currentPage, setCurrentPage] = useState(1)
+  const [pageWidth, setPageWidth] = useState(800)
   const scrollRef = useRef<HTMLDivElement>(null)
   const ticking = useRef(false)
   const inited = useRef(false)
-  const pageWidth = Math.min(window.innerWidth * 0.8, 900)
+
+  // 响应式页面宽度，与 PdfViewerPage 保持一致
+  useEffect(() => {
+    const update = () => setPageWidth(Math.min(window.innerWidth * 0.8, 1000))
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
 
   // 打开弹窗时 fetch PDF
   useEffect(() => {
