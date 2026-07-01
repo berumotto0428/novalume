@@ -66,7 +66,13 @@ export default function SourcePanel({ sources, kbId }: Props) {
                   )}
                 </button>
                 {confidence !== null && (
-                  <span className={`shrink-0 ml-2 font-medium ${confidence >= 70 ? 'text-green-600' : confidence >= 50 ? 'text-yellow-600' : 'text-gray-400'}`}>
+                  <span className={`shrink-0 ml-2 font-medium ${
+                    confidence >= 80 ? 'text-green-600'
+                    : confidence >= 60 ? 'text-lime-600'
+                    : confidence >= 40 ? 'text-yellow-600'
+                    : confidence >= 20 ? 'text-orange-500'
+                    : 'text-red-500'
+                  }`}>
                     {confidence}%
                   </span>
                 )}

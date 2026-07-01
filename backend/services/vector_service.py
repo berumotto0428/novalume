@@ -341,7 +341,7 @@ class VectorService:
         w = settings.keyword_weight
         max_bm25 = max(r["_sparse_score"] for r in deduped) or 1
         for r in deduped:
-            sim = 1 - r["distance"]                     # 语义绝对相关度
+            sim = 1 / (1 + r["distance"])               # 语义绝对相关度（1-d 线性映射对中等距离太苛刻，改用反比例）
             kw = r["_sparse_score"] / max_bm25           # 关键词绝对相关度（归一化）
             r["score"] = round((sim * (1 - w) + kw * w) * 100)
 
